@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>Andora — O Vale das Lanternas 3D</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -57,7 +59,7 @@ button{cursor:pointer;border:none;outline:none;font-family:inherit}
 .dlg-close{position:absolute;top:10px;right:12px;background:none;color:#fff8;font-size:17px}
 
 /* ============ Cutscene ============ */
-#cutscene{position:fixed;inset:0;background:#05070d;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#cutscene{position:fixed;inset:0;background:#05070d;z-index:80;display:flex;flex-direction:column;align-items:center;justify-content:center}
 #csImgWrap{position:relative;width:min(92vw,1100px);aspect-ratio:16/9;border-radius:12px;overflow:hidden;box-shadow:0 20px 70px rgba(0,0,0,.7)}
 #csImg{width:100%;height:100%;object-fit:cover;display:block}
 #csVignette{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 52%,rgba(0,0,0,.55) 100%);pointer-events:none}
@@ -340,7 +342,7 @@ let hour = 9, dayCount = 1, worldTime = 0, gameStarted = false, menuMode = true,
 let friends = {}, quests = {}, inv = {}, flags = {};
 const input = { fwd: 0, strafe: 0, run: false, jump: false };
 const touchMove = { x: 0, y: 0 };
-let camYaw = Math.PI, camPitch = 0.22, camDist = 13;
+let camYaw = 0, camPitch = 0.22, camDist = 13;
 let dlgNpc = null, saveTimer = 0;
 
 /* ---------------- céu / luzes ---------------- */
@@ -518,6 +520,18 @@ function buildNature() {
 }
 
 /* ---------------- construções ---------------- */
+const houseColliders = [];
+function collideCircle(x, z, r) {
+  for (const c of houseColliders) {
+    const dx = x - c.x, dz = z - c.z;
+    const d = Math.sqrt(dx * dx + dz * dz), min = c.r + r;
+    if (d < min) {
+      if (d < 0.001) { x = c.x + min; }
+      else { const k = min / d; x = c.x + dx * k; z = c.z + dz * k; }
+    }
+  }
+  return { x, z };
+}
 function addShadowBlob(g, r) {
   const sh = new THREE.Mesh(new THREE.CircleGeometry(r, 14), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false }));
   sh.rotation.x = -Math.PI / 2; sh.position.y = 0.06; g.add(sh);
@@ -541,6 +555,7 @@ function makeHouse(x, z, rot, sc, wall, roof) {
   }
   addShadowBlob(g, 7.5 * sc);
   g.position.set(x, h0, z); g.rotation.y = rot;
+  houseColliders.push({ x, z, r: 6.4 * sc });
   scene.add(g);
   return g;
 }
@@ -569,6 +584,7 @@ function buildVillage() {
   addShadowBlob(fg, 5);
   fg.position.set(VILLAGE.x, height(VILLAGE.x, VILLAGE.z), VILLAGE.z);
   scene.add(fg);
+  houseColliders.push({ x: VILLAGE.x, z: VILLAGE.z, r: 5.2 });
   animatables.push(t => { orb.position.y = 5.0 + Math.sin(t * 1.1) * 0.22; glow.position.y = orb.position.y; });
   // moinho
   const mg = new THREE.Group();
@@ -585,6 +601,7 @@ function buildVillage() {
   addShadowBlob(mg, 5.5);
   mg.position.set(WINDMILL.x, height(WINDMILL.x, WINDMILL.z), WINDMILL.z);
   mg.rotation.y = -0.7; scene.add(mg);
+  houseColliders.push({ x: WINDMILL.x, z: WINDMILL.z, r: 5.6 });
   animatables.push((t, dt) => { hub.rotation.z += dt * 0.55; });
   // ruínas antigas
   const colM = new THREE.MeshLambertMaterial({ color: 0xb8ac96 });
@@ -655,7 +672,7 @@ function makeHero() {
   const hair = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), hairM); hair.position.set(0, 2.72, -0.06); hair.scale.set(1, 0.82, 1); g.add(hair);
   addShadowBlob(g, 0.85);
   scene.add(g);
-  return { g, legL, legR, armL, armR, cloak, torso, tunicM, cloakM, skinM, x: 0, z: 160, y: 3, vy: 0, yaw: Math.PI, speed: 0, stamina: 100, onGround: true, swimming: false, mounted: false, animT: 0 };
+  return { g, legL, legR, armL, armR, cloak, torso, tunicM, cloakM, skinM, x: 0, z: 195, y: 3, vy: 0, yaw: 0, speed: 0, stamina: 100, onGround: true, swimming: false, mounted: false, animT: 0 };
 }
 function applyHeroStyle() {
   if (!hero) return;
@@ -1196,7 +1213,7 @@ function loadWorld(data) {
   hour = data.hour != null ? data.hour : 9;
   dayCount = data.dayCount || 1;
   worldTime = data.played || 0;
-  hero.x = data.x || 0; hero.z = data.z || 160; hero.yaw = data.yaw || Math.PI;
+  hero.x = data.x || 0; hero.z = data.z || 195; hero.yaw = data.yaw != null ? data.yaw : 0;
   hero.y = height(hero.x, hero.z) + 0.1;
   hero.saveId = data.id; hero.saveName = data.name;
   applyHeroStyle();
@@ -1227,17 +1244,20 @@ const CS = {
 };
 function playCutscene(after) {
   CS.idx = 0; CS.a = CS.b = CS.c = 0; CS.after = after || null;
+  $('menu').classList.add('hidden');
   $('cutscene').classList.remove('hidden');
   showCSNode();
 }
+function endCutscene() {
+  $('cutscene').classList.add('hidden');
+  store.set('andora3d_intro_v1', 1);
+  const fn = CS.after; CS.after = null;
+  if (fn) fn();
+  else if (!gameStarted) $('menu').classList.remove('hidden');
+}
 function showCSNode() {
   const n = CS.nodes[CS.idx];
-  if (!n) {
-    $('cutscene').classList.add('hidden');
-    store.set('andora3d_intro_v1', 1);
-    if (CS.after) CS.after();
-    return;
-  }
+  if (!n) { endCutscene(); return; }
   const img = $('csImg');
   if (n.img && ASSETS[n.img]) { img.src = ASSETS[n.img]; img.classList.remove('hidden'); }
   if (n.finale) {
@@ -1254,11 +1274,7 @@ function showCSNode() {
     $('csOpts').innerHTML = '';
     const b = document.createElement('button'); b.className = 'cs-opt';
     b.innerHTML = '✨ Começar a jogar';
-    b.onclick = () => {
-      $('cutscene').classList.add('hidden');
-      store.set('andora3d_intro_v1', 1);
-      if (CS.after) CS.after();
-    };
+    b.onclick = () => endCutscene();
     $('csOpts').appendChild(b);
     return;
   }
@@ -1484,6 +1500,7 @@ function setupMenu() {
     skinEl.appendChild(b);
   });
   $('btnStartNew').onclick = () => startNew();
+  $('csSkip').onclick = () => endCutscene();
   $('dlgClose').onclick = () => { $('dialogue').classList.add('hidden'); dlgNpc = null; };
   $('btnSave').onclick = () => saveWorld(true);
   $('btnMenu').onclick = () => toggleMenu();
@@ -1494,7 +1511,7 @@ function startNew() {
   friends = {}; inv = {}; flags = {};
   initQuestState();
   hour = 9; dayCount = 1; worldTime = 0;
-  hero.x = 0; hero.z = 165; hero.yaw = Math.PI; hero.y = height(0, 165) + 0.1; hero.vy = 0;
+  hero.x = 0; hero.z = 195; hero.yaw = 0; hero.y = height(0, 195) + 0.1; hero.vy = 0;
   hero.mounted = false; hero.mountedHorse = null; hero.stamina = 100;
   hero.saveId = 'w' + Date.now(); hero.saveName = 'Mundo de ' + heroName;
   applyHeroStyle();
@@ -1541,6 +1558,8 @@ function updateHero(dt) {
     hero.x += wx * speed * dt;
     hero.z += wz * speed * dt;
     hero.x = clamp(hero.x, -430, 430); hero.z = clamp(hero.z, -430, 430);
+    const fixed = collideCircle(hero.x, hero.z, 0.9);
+    hero.x = fixed.x; hero.z = fixed.z;
     hero.yaw = lerp(hero.yaw, Math.atan2(wx, wz), 1 - Math.exp(-10 * dt));
     hero.speed = speed;
     hero.animT += dt * (speed * 0.62);
@@ -1628,6 +1647,8 @@ function updateCamera(dt) {
   );
   const gy = height(desired.x, desired.z) + 1.4;
   if (desired.y < gy) desired.y = gy;
+  const fixed = collideCircle(desired.x, desired.z, 0.5);
+  desired.x = fixed.x; desired.z = fixed.z;
   camera.position.lerp(desired, 1 - Math.exp(-7 * dt));
   camera.lookAt(target);
 }
