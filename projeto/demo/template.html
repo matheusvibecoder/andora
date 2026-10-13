@@ -1,0 +1,1434 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANDORA — demo jogável</title>
+<style>
+  :root {
+    --ink:#141c28; --panel:rgba(16,26,38,0.92); --cream:#fdf6e6;
+    --sun:#e8a24a; --dim:#8fa3b8; --sky:#7ec4e8;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; }
+  body {
+    background:var(--ink); color:var(--cream);
+    font-family:Georgia,'Times New Roman',serif; overflow:hidden; user-select:none;
+  }
+  .hidden { display:none !important; }
+  button, input { font-family:inherit; }
+
+  /* ===== MENU ===== */
+  #menu {
+    position:fixed; inset:0; overflow-y:auto;
+    background:linear-gradient(180deg,#6fb4dc 0%,#b8dcb4 34%,#f2dfa8 100%);
+    color:#22342a; text-align:center; padding:38px 20px 60px;
+  }
+  #menu h1 {
+    font-size:clamp(42px,8vw,86px); font-weight:normal; letter-spacing:16px;
+    color:#2c4a34; text-shadow:0 3px 0 rgba(255,255,255,0.45);
+  }
+  #menu .sub { letter-spacing:4px; font-size:clamp(12px,1.7vw,16px); color:#4a6248; margin:8px 0 28px; }
+  .menu-btns { display:flex; flex-wrap:wrap; gap:13px; justify-content:center; margin-bottom:26px; }
+  .m-btn {
+    background:rgba(255,252,240,0.94); color:#2c4a34; border:2px solid #9cbe84;
+    border-radius:14px; padding:15px 26px; font-size:16px; letter-spacing:2px;
+    cursor:pointer; transition:all .2s ease; box-shadow:0 6px 18px rgba(50,80,50,0.18);
+  }
+  .m-btn:hover { transform:translateY(-3px); background:#fff; border-color:var(--sun); }
+  .m-btn.primary { background:#2c4a34; color:#fdf6e6; border-color:#2c4a34; font-size:18px; }
+  .m-btn.primary:hover { background:#3c6044; }
+  .panel-card {
+    background:rgba(255,252,244,0.96); color:#2c4a34; border-radius:16px;
+    max-width:620px; margin:18px auto; padding:22px 26px; text-align:left;
+    box-shadow:0 12px 34px rgba(40,70,50,0.25);
+  }
+  .panel-card h3 { font-weight:normal; letter-spacing:3px; margin-bottom:14px; text-align:center; }
+  .panel-card label { display:block; font-size:12px; letter-spacing:2px; text-transform:uppercase; margin:12px 0 6px; color:#5a7254; }
+  .panel-card input[type=text] {
+    width:100%; padding:11px 14px; border-radius:10px; border:2px solid #c2d6b0;
+    font-size:16px; background:#fff; color:#2c4a34; outline:none;
+  }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip {
+    background:#eef4e4; border:2px solid #c2d6b0; border-radius:999px;
+    padding:8px 15px; cursor:pointer; font-size:14px; letter-spacing:1px;
+  }
+  .chip:hover, .chip.sel { background:#2c4a34; color:#fdf6e6; border-color:#2c4a34; }
+  .sw { display:inline-block; width:38px; height:38px; border-radius:50%; cursor:pointer;
+    border:3px solid rgba(255,255,255,0.8); margin-right:8px; vertical-align:middle; }
+  .sw.sel { border-color:#2c4a34; transform:scale(1.12); }
+  .slot {
+    background:#eef4e4; border:2px solid #c2d6b0; border-radius:12px;
+    padding:12px 16px; margin:9px 0; display:flex; justify-content:space-between;
+    align-items:center; gap:10px; cursor:pointer;
+  }
+  .slot:hover { border-color:var(--sun); }
+  .slot .del { background:#c06050; color:#fff; border:none; border-radius:8px; padding:7px 11px; cursor:pointer; }
+  .gallery { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:16px; }
+  .gallery img { width:min(190px,24vw); border-radius:12px; border:3px solid rgba(255,255,255,0.75);
+    box-shadow:0 8px 22px rgba(40,70,50,0.25); }
+  .menu-note { margin-top:22px; color:#4a6248; font-size:12px; letter-spacing:1.5px; line-height:2; }
+
+  /* ===== CUTSCENE ===== */
+  #cutscene { position:fixed; inset:0; background:#0c1218; display:flex; flex-direction:column; }
+  #cs-bar { flex:none; display:flex; justify-content:space-between; align-items:center;
+    padding:10px 16px; background:#101a24; z-index:40; }
+  #cs-bar .t { letter-spacing:3px; font-size:12px; color:var(--sun); text-transform:uppercase; }
+  .bar-btn { background:transparent; color:#cfe0ee; border:1px solid rgba(207,224,238,0.35);
+    border-radius:8px; padding:8px 14px; cursor:pointer; letter-spacing:2px; font-size:11px; text-transform:uppercase; }
+  .bar-btn:hover { color:var(--sun); border-color:var(--sun); }
+  #cs-stage { position:relative; flex:1; overflow:hidden; cursor:pointer; }
+  #cs-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity 1.1s ease; }
+  #cs-img.on { opacity:1; }
+  #cs-fade { position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(180deg,transparent 55%,rgba(10,16,22,0.55) 100%); }
+  #cs-dialog { position:absolute; left:50%; transform:translateX(-50%); bottom:5vh;
+    width:min(860px,92%); background:var(--panel); border:1px solid rgba(207,224,238,0.28);
+    border-radius:12px; padding:18px 24px 14px; z-index:10; box-shadow:0 14px 44px rgba(0,0,0,0.5); }
+  #cs-dialog.gone { opacity:0; pointer-events:none; transition:opacity .35s; }
+  #cs-speaker { font-size:12px; letter-spacing:3px; text-transform:uppercase; color:var(--sun); margin-bottom:9px; min-height:14px; }
+  #cs-speaker.calm { color:#9fd8e8; }
+  #cs-speaker.narr { color:#b8a8e0; }
+  #cs-text { font-size:clamp(15px,2vw,19px); line-height:1.75; min-height:3.3em; }
+  #cs-hint { margin-top:9px; text-align:right; font-size:11px; letter-spacing:2px; color:#8fa3b8; text-transform:uppercase; }
+  #cs-choices { position:absolute; left:50%; transform:translateX(-50%); bottom:5vh;
+    width:min(680px,92%); z-index:12; display:flex; flex-direction:column; gap:11px; }
+  #cs-choices.gone { opacity:0; pointer-events:none; transition:opacity .3s; }
+  #cs-choices .q { text-align:center; font-size:13px; letter-spacing:2px; text-transform:uppercase; color:#9fb4c8; margin-bottom:4px; }
+  .c-btn { background:var(--panel); color:var(--cream); border:1px solid rgba(207,224,238,0.4);
+    border-radius:11px; padding:14px 20px; font-size:16px; text-align:left; cursor:pointer; transition:all .2s ease; }
+  .c-btn:hover { border-color:var(--sun); color:var(--sun); transform:translateY(-2px); }
+  .c-btn .k { display:inline-block; width:22px; height:22px; line-height:21px; text-align:center;
+    border:1px solid currentColor; border-radius:50%; font-size:12px; margin-right:12px; }
+  .overlay { position:absolute; inset:0; z-index:20; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; background:rgba(12,18,24,0.88); padding:5vh 8vw; }
+  .overlay h2 { font-size:clamp(22px,4vw,40px); font-weight:normal; letter-spacing:6px; color:var(--sun); margin-bottom:14px; }
+  .overlay p { color:#cfe0ee; line-height:1.9; max-width:620px; font-size:clamp(13px,1.8vw,17px); }
+  .flags { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:20px 0 4px; }
+  .flag { font-size:11px; letter-spacing:2px; text-transform:uppercase; color:#9fd8e8;
+    border:1px solid rgba(159,216,232,0.4); border-radius:999px; padding:6px 13px; }
+  .ov-actions { margin-top:28px; display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+
+  /* ===== MUNDO ===== */
+  #world { position:fixed; inset:0; background:#0c1218; }
+  #scene-wrap { position:absolute; inset:0; overflow:hidden; cursor:pointer; }
+  #scene-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .tint { position:absolute; inset:0; pointer-events:none; transition:opacity 1.5s linear; }
+  #tint-gold { background:linear-gradient(180deg,rgba(255,170,90,0.32),rgba(255,140,70,0.15) 60%,rgba(120,60,110,0.12)); opacity:0; }
+  #tint-morning { background:linear-gradient(180deg,rgba(255,210,150,0.28),rgba(255,200,140,0.10)); opacity:0; }
+  #tint-night { background:linear-gradient(180deg,rgba(18,26,80,0.58),rgba(28,28,104,0.48) 60%,rgba(18,22,74,0.58)); opacity:0; }
+  #sky-canvas { position:absolute; inset:0; pointer-events:none; }
+  #sun, #moon { position:absolute; border-radius:50%; pointer-events:none; transform:translate(-50%,-50%); }
+  #sun { width:78px; height:78px; background:radial-gradient(circle,#ffe9a8 30%,rgba(255,210,120,0.5) 60%,rgba(255,210,120,0) 70%); }
+  #moon { width:58px; height:58px; background:radial-gradient(circle at 40% 40%,#eef2ff 35%,rgba(210,220,255,0.4) 65%,rgba(210,220,255,0) 72%); }
+  .glow-spot { position:absolute; border-radius:50%; pointer-events:none; transform:translate(-50%,-50%);
+    background:radial-gradient(circle,rgba(255,205,120,0.5),rgba(255,205,120,0) 70%); opacity:0; transition:opacity 1.5s linear; }
+
+  #player-el, #horse-el { position:absolute; transform:translateX(-50%); pointer-events:none; }
+  #player-el img { height:100%; display:block; }
+  #player-el.flip img { transform:scaleX(-1); }
+  #horse-el img { height:100%; display:block; filter:saturate(0.92) contrast(1.04) blur(0.35px); }
+  #horse-el.flip img { transform:scaleX(-1); }
+  #lumo-el { position:absolute; transform:translateX(-50%); pointer-events:none;
+    animation:lumoFloat 3.2s ease-in-out infinite; filter:drop-shadow(0 0 14px rgba(255,210,130,0.75)); }
+  #lumo-el img { width:100%; display:block; }
+  @keyframes lumoFloat { 0%,100%{ margin-top:0 } 50%{ margin-top:-14px } }
+
+  .hotspot { position:absolute; transform:translate(-50%,-50%); cursor:pointer; background:transparent; border:none; z-index:6; }
+  .hotspot .bub { display:inline-block; background:rgba(253,246,230,0.92); color:#2c4a34;
+    border-radius:999px; padding:5px 11px; font-size:15px; box-shadow:0 5px 14px rgba(20,40,30,0.3);
+    transition:transform .18s ease; white-space:nowrap; }
+  .hotspot:hover .bub { transform:translateY(-4px) scale(1.06); }
+  .hotspot .lbl { display:block; margin-top:4px; font-size:11px; letter-spacing:1.5px; color:#fff;
+    text-shadow:0 1px 4px rgba(0,0,0,0.7); text-transform:uppercase; }
+  .exit-btn { position:absolute; top:42%; transform:translateY(-50%); z-index:8;
+    width:54px; height:92px; border-radius:14px; cursor:pointer;
+    background:rgba(253,246,230,0.85); color:#2c4a34; border:2px solid #9cbe84; font-size:30px;
+    transition:all .2s ease; }
+  .exit-btn:hover { background:#fff; border-color:var(--sun); }
+  #exit-left { left:12px; } #exit-right { right:12px; }
+  .exit-btn small { display:block; font-size:9px; letter-spacing:1px; margin-top:4px; }
+
+  #hud { position:absolute; top:0; left:0; right:0; z-index:20; display:flex;
+    justify-content:space-between; align-items:flex-start; padding:12px 14px; pointer-events:none; }
+  .hud-card { background:rgba(253,246,230,0.92); color:#2c4a34; border-radius:12px;
+    padding:10px 16px; box-shadow:0 6px 18px rgba(20,40,30,0.25); pointer-events:auto;
+    font-size:12px; letter-spacing:1.2px; line-height:1.8; }
+  .hud-card b { font-size:15px; letter-spacing:2px; }
+  #hud-right { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+  .hud-btn { background:rgba(253,246,230,0.92); color:#2c4a34; border:2px solid #9cbe84;
+    border-radius:999px; padding:8px 14px; cursor:pointer; font-size:11px; letter-spacing:1.5px; }
+  .hud-btn:hover { background:#fff; border-color:var(--sun); }
+  #stamina-wrap { margin-top:5px; width:150px; height:9px; border-radius:99px; background:rgba(44,74,52,0.18); overflow:hidden; }
+  #stamina-bar { height:100%; width:100%; border-radius:99px; background:linear-gradient(90deg,#7ab86a,#a8d88a); transition:width .15s linear; }
+
+  #side-panels { position:absolute; right:14px; top:118px; z-index:20; width:230px; display:flex; flex-direction:column; gap:10px; }
+  .mini-panel { background:rgba(253,246,230,0.93); color:#2c4a34; border-radius:12px;
+    padding:11px 14px; box-shadow:0 6px 18px rgba(20,40,30,0.25); font-size:12px; letter-spacing:1px; line-height:1.8; }
+  .bar-row { display:flex; align-items:center; gap:8px; margin:5px 0; }
+  .bar-row .bl { width:64px; }
+  .bar-bg { flex:1; height:9px; border-radius:99px; background:rgba(60,90,60,0.18); overflow:hidden; }
+  .bar-fill { height:100%; border-radius:99px; transition:width .5s ease; }
+
+  #inv-panel { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:40;
+    width:min(560px,92%); background:rgba(16,26,38,0.96); border:1px solid rgba(207,224,238,0.3);
+    border-radius:16px; padding:22px; }
+  #inv-panel h3 { letter-spacing:3px; font-weight:normal; color:var(--sun); text-align:center; margin-bottom:14px; }
+  #inv-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(64px,1fr)); gap:10px; }
+  .inv-slot { background:rgba(255,255,255,0.07); border:1px solid rgba(207,224,238,0.3);
+    border-radius:10px; height:64px; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; cursor:pointer; font-size:22px; position:relative; }
+  .inv-slot:hover { border-color:var(--sun); }
+  .inv-slot .n { position:absolute; right:6px; bottom:4px; font-size:11px; color:var(--sun); }
+  .inv-slot .nm { font-size:8px; letter-spacing:1px; color:var(--dim); text-transform:uppercase; margin-top:2px; }
+  .inv-actions { display:flex; gap:10px; justify-content:center; margin-top:16px; }
+
+  #toast-wrap { position:absolute; top:88px; left:50%; transform:translateX(-50%);
+    display:flex; flex-direction:column; gap:8px; z-index:60; pointer-events:none; width:min(520px,90%); }
+  .toast { background:rgba(253,246,230,0.95); color:#2c4a34; border-radius:12px; padding:11px 18px;
+    text-align:center; font-size:14px; letter-spacing:1px; box-shadow:0 8px 22px rgba(20,40,30,0.3);
+    animation:toastIn .3s ease; }
+  @keyframes toastIn { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:none; } }
+
+  #talk { position:absolute; left:50%; transform:translateX(-50%); bottom:22px;
+    width:min(780px,94%); background:var(--panel); border:1px solid rgba(207,224,238,0.3);
+    border-radius:14px; padding:16px 20px; z-index:50; box-shadow:0 16px 48px rgba(0,0,0,0.5);
+    display:flex; gap:16px; cursor:pointer; }
+  #talk.gone { display:none; }
+  #talk-avatar { flex:none; width:86px; height:86px; border-radius:50%; border:3px solid var(--sun);
+    display:flex; align-items:center; justify-content:center; font-size:38px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.4); background:linear-gradient(135deg,#4a6a52,#2c4a34); }
+  #talk-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+  #talk-body { flex:1; min-width:0; }
+  #talk-name { font-size:12px; letter-spacing:3px; text-transform:uppercase; color:var(--sun); margin-bottom:6px; }
+  #talk-friend { font-size:11px; letter-spacing:1.5px; color:#9fd8e8; margin-bottom:8px; }
+  #talk-friend .fbar { display:inline-block; width:110px; height:7px; border-radius:99px;
+    background:rgba(159,216,232,0.2); vertical-align:middle; margin:0 8px; overflow:hidden; }
+  #talk-friend .fbar i { display:block; height:100%; background:#9fd8e8; border-radius:99px; }
+  #talk-text { font-size:16px; line-height:1.7; min-height:3em; }
+  #talk-choices { display:flex; flex-direction:column; gap:9px; margin-top:12px; }
+  .t-btn { background:rgba(255,255,255,0.06); color:var(--cream); border:1px solid rgba(207,224,238,0.35);
+    border-radius:9px; padding:11px 14px; font-size:14px; text-align:left; cursor:pointer; transition:all .18s; }
+  .t-btn:hover { border-color:var(--sun); color:var(--sun); }
+  #talk-hint { margin-top:9px; text-align:right; font-size:10px; letter-spacing:2px; color:#8fa3b8; text-transform:uppercase; }
+
+  .proj { position:absolute; transform:translate(-50%,-50%); pointer-events:none; font-size:22px; z-index:7; }
+</style>
+</head>
+<body>
+
+<div id="menu">
+  <h1>ANDORA</h1>
+  <div class="sub">mundo aberto · pintura fantástica · amizades · cavalos · física · dia e noite</div>
+  <div class="menu-btns" id="menu-main">
+    <button class="m-btn primary" id="btn-continue">▶ Continuar</button>
+    <button class="m-btn" id="btn-create">🌍 Criar mundo</button>
+    <button class="m-btn" id="btn-load">📂 Carregar mundo</button>
+    <button class="m-btn" id="btn-cutscene">🎬 Rever cutscene</button>
+  </div>
+
+  <div class="panel-card hidden" id="create-panel">
+    <h3>🌍 CRIAR NOVO MUNDO</h3>
+    <label>Nome do mundo</label>
+    <input type="text" id="world-name" value="Meu Vale de Andora" maxlength="24">
+    <label>Nome do herói (ou escolha um)</label>
+    <input type="text" id="hero-name" value="Ari" maxlength="14">
+    <div class="chips" style="margin-top:8px">
+      <span class="chip sel" data-name="Ari">Ari</span>
+      <span class="chip" data-name="Lino">Lino</span>
+      <span class="chip" data-name="Suri">Suri</span>
+      <span class="chip" data-name="Téo">Téo</span>
+      <span class="chip" data-name="Nim">Nim</span>
+    </div>
+    <label>Cor da capa</label>
+    <div>
+      <span class="sw sel" data-hue="0" style="background:#4e7a44"></span>
+      <span class="sw" data-hue="45" style="background:#7a6a3c"></span>
+      <span class="sw" data-hue="120" style="background:#3c6a7a"></span>
+      <span class="sw" data-hue="210" style="background:#5a4a8a"></span>
+      <span class="sw" data-hue="300" style="background:#8a4a5a"></span>
+      <span class="sw" data-hue="160" style="background:#3c7a62"></span>
+    </div>
+    <label>Tom de pele</label>
+    <div>
+      <span class="sw sel" data-skin="0" style="background:#e8b88a"></span>
+      <span class="sw" data-skin="1" style="background:#c98a5e"></span>
+      <span class="sw" data-skin="2" style="background:#8a5a3c"></span>
+      <span class="sw" data-skin="3" style="background:#f0c9a2"></span>
+    </div>
+    <div class="inv-actions">
+      <button class="m-btn primary" id="btn-do-create">✨ Criar e jogar</button>
+      <button class="m-btn" id="btn-cancel-create">voltar</button>
+    </div>
+  </div>
+
+  <div class="panel-card hidden" id="load-panel">
+    <h3>📂 SEUS MUNDOS</h3>
+    <div id="slots"></div>
+    <div class="inv-actions"><button class="m-btn" id="btn-cancel-load">voltar</button></div>
+  </div>
+
+  <div class="gallery" id="gallery"></div>
+  <div class="menu-note">
+    ⌨ A/D ou setas: andar · Shift: correr · Espaço: pular (física!) · E: interagir · I: inventário · H: cavalo · Esc: fechar
+  </div>
+</div>
+
+<div id="cutscene" class="hidden">
+  <div id="cs-bar">
+    <button class="bar-btn" id="cs-menu">☰ menu</button>
+    <div class="t">ANDORA — o caminho até o vale</div>
+    <button class="bar-btn" id="cs-skip">pular ▶▶</button>
+  </div>
+  <div id="cs-stage">
+    <img id="cs-img" alt="cena">
+    <div id="cs-fade"></div>
+    <div id="cs-dialog">
+      <div id="cs-speaker"></div>
+      <div id="cs-text"></div>
+      <div id="cs-hint">▶ clique para continuar</div>
+    </div>
+    <div id="cs-choices" class="gone"></div>
+    <div id="cs-overlay" class="overlay hidden"></div>
+  </div>
+</div>
+
+<div id="world" class="hidden">
+  <div id="scene-wrap">
+    <img id="scene-img" alt="cena">
+    <div id="glow-layer"></div>
+    <div class="tint" id="tint-morning"></div>
+    <div class="tint" id="tint-gold"></div>
+    <div class="tint" id="tint-night"></div>
+    <canvas id="sky-canvas"></canvas>
+    <div id="sun"></div><div id="moon"></div>
+    <div id="horse-el"><img id="horse-img" alt="cavalo"></div>
+    <div id="lumo-el"><img id="lumo-img" alt="Lumo"></div>
+    <div id="player-el"><img id="player-img" alt="herói"></div>
+    <div id="hotspots"></div>
+    <button class="exit-btn" id="exit-left">‹<small>anterior</small></button>
+    <button class="exit-btn" id="exit-right">›<small>próxima</small></button>
+  </div>
+  <div id="hud">
+    <div class="hud-card">
+      <b id="region-name">Vila de Andora</b><br>
+      <span id="hero-line">🧙 <span id="hero-name-hud">Ari</span></span> · <span id="day-label">☀️ tarde</span><br>
+      <span id="hud-flags">✦ descobertas: 0</span>
+      <div id="stamina-wrap"><div id="stamina-bar"></div></div>
+    </div>
+    <div id="hud-right">
+      <button class="hud-btn" id="w-save">💾 Salvar</button>
+      <button class="hud-btn" id="w-inv">🎒 Inventário</button>
+      <button class="hud-btn" id="w-horse">🐴 Montar</button>
+      <button class="hud-btn" id="w-lumo">💬 Lumo</button>
+      <button class="hud-btn" id="w-menu">☰ Menu</button>
+    </div>
+  </div>
+  <div id="side-panels">
+    <div class="mini-panel" id="horse-panel">
+      <b>🐴 <span id="horse-mode">descansando</span></b>
+      <div class="bar-row"><span class="bl">🌾 fome</span><div class="bar-bg"><div class="bar-fill" id="bar-hunger" style="width:80%;background:#c8a24a"></div></div></div>
+      <div class="bar-row"><span class="bl">💧 sede</span><div class="bar-bg"><div class="bar-fill" id="bar-thirst" style="width:80%;background:#5aa2c8"></div></div></div>
+      <div class="bar-row"><span class="bl">⚡ energia</span><div class="bar-bg"><div class="bar-fill" id="bar-energy" style="width:90%;background:#7ab86a"></div></div></div>
+      <div id="horse-tip" style="font-size:10px;opacity:.75">desça para ele pastar e beber</div>
+    </div>
+    <div class="mini-panel" id="quest-panel">
+      <b>📜 Missões</b>
+      <div id="quest-list" style="margin-top:4px">—</div>
+    </div>
+  </div>
+  <div id="inv-panel" class="hidden">
+    <h3>🎒 INVENTÁRIO</h3>
+    <div id="inv-grid"></div>
+    <div class="inv-actions">
+      <button class="m-btn" id="inv-throw">🪨 Arremessar selecionado (física!)</button>
+      <button class="m-btn" id="inv-close">fechar</button>
+    </div>
+  </div>
+  <div id="toast-wrap"></div>
+  <div id="talk" class="gone">
+    <div id="talk-avatar"></div>
+    <div id="talk-body">
+      <div id="talk-name"></div>
+      <div id="talk-friend"></div>
+      <div id="talk-text"></div>
+      <div id="talk-choices"></div>
+      <div id="talk-hint">▶ clique para continuar</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const ASSETS = @@ASSETS@@;
+const $ = id => document.getElementById(id);
+
+/* ============ ESTADO / MUNDO SALVO ============ */
+let WORLD = null; // mundo atual
+const SKINS = ['#e8b88a','#c98a5e','#8a5a3c','#f0c9a2'];
+function worldsLoad() { try { return JSON.parse(localStorage.getItem('andora_mundos_v1') || '[]'); } catch(e) { return window._worlds || []; } }
+function worldsSave(list) { window._worlds = list; try { localStorage.setItem('andora_mundos_v1', JSON.stringify(list)); } catch(e) {} }
+function heroLabel() { return (WORLD && WORLD.heroName) || 'Ari'; }
+function heroFilter() {
+  const hue = (WORLD && WORLD.hue) || 0;
+  const skin = (WORLD && WORLD.skin) || 0;
+  return `hue-rotate(${hue}deg) saturate(${1 + hue/500}) sepia(${skin*0.12}) brightness(${1 + skin*0.02})`;
+}
+function saveWorld(showToast) {
+  if (!WORLD) return;
+  WORLD.sceneId = sceneId; WORLD.dayT = dayT; WORLD.friends = FRIENDS;
+  WORLD.flags = [...flags]; WORLD.inv = INV; WORLD.quests = QUESTS;
+  WORLD.horse = { hunger: horse.hunger, thirst: horse.thirst, energy: horse.energy };
+  WORLD.played = (WORLD.played0 || 0) + (Date.now() - sessionStart);
+  const list = worldsLoad();
+  const i = list.findIndex(w => w.id === WORLD.id);
+  if (i >= 0) list[i] = WORLD; else list.push(WORLD);
+  worldsSave(list);
+  try { localStorage.setItem('andora_last', WORLD.id); } catch(e) {}
+  if (showToast) toast('💾 Mundo salvo!');
+}
+
+/* ============ FLAGS / TOASTS ============ */
+let flags = new Set();
+function addFlag(f) {
+  if (flags.has(f)) return;
+  flags.add(f);
+  $('hud-flags').textContent = '✦ descobertas: ' + flags.size;
+  toast('✦ ' + f);
+}
+function toast(msg) {
+  const w = $('toast-wrap');
+  const d = document.createElement('div');
+  d.className = 'toast'; d.textContent = msg;
+  w.appendChild(d);
+  setTimeout(() => { d.style.opacity = '0'; d.style.transition = 'opacity .5s'; }, 2700);
+  setTimeout(() => d.remove(), 3300);
+}
+
+/* ============ CUTSCENE (com continuidade) ============ */
+const CS_FRAMES = ['f1','f2','f3','f4'];
+const CS_NODES = {
+  start: { img:0, lines:[
+    {who:'', cls:'narr', t:'As histórias dizem que Andora é um vale onde as luzes se lembram de quem as acende. O caminho até lá leva um dia inteiro — e começa ao amanhecer, numa estrada de capim molhado.'},
+    {who:'Lumo', cls:'calm', t:'✶ voa à frente, feliz, deixando um rastro de faíscas douradas ✶'}
+  ], choice:{ q:'Como a caminhada começa?', opts:[
+    {k:'A', label:'Assobiar uma melodia alegre pelo caminho', goto:'c1a', tone:'a'},
+    {k:'B', label:'Caminhar em silêncio, ouvindo os pássaros', goto:'c1b', tone:'b'},
+    {k:'C', label:'Acender a lanterna mesmo com o sol nascendo', goto:'c1c', tone:'c'}
+  ]}},
+  c1a:{ img:0, lines:[
+    {who:'', cls:'narr', t:'O assobio espalha os pardais da cerca — e devolve um eco do outro lado do vale, como se Andora já estivesse cantando junto.'}
+  ], flag:'A melodia da estrada', goto:'ch2' },
+  c1b:{ img:0, lines:[
+    {who:'', cls:'narr', t:'Em silêncio, todo som tem peso: o vento no capim, um rio distante, o próprio coração. Lumo baixa o brilho para não atrapalhar.'}
+  ], flag:'O silêncio do caminho', goto:'ch2' },
+  c1c:{ img:0, lines:[
+    {who:'', cls:'narr', t:'A chama responde antes de você tocar no pavio — e, lá na frente, três vagalumes acendem juntos, como faróis pequenos.'},
+    {who:'Lumo', cls:'calm', t:'✶✶✶! ✶'}
+  ], flag:'Os três sinais', goto:'ch2' },
+
+  ch2: { img:1, lines:[
+    {who:'', cls:'narr', t:'Ao meio-dia, a trilha desce para o bosque e uma ponte de pedra antiga atravessa o rio. A cachoeira canta baixo. Um cervo bebe água sem medo.'},
+    {who:'Lumo', cls:'calm', t:'✶ desce até a água para tocar com a cauda de luz ✶'}
+  ], choice:{ q:'Na ponte, o que fazer?', opts:[
+    {k:'A', label:'Parar para admirar a cachoeira com calma', goto:'c2a', tone:'a'},
+    {k:'B', label:'Observar as marcas antigas na pedra da ponte', goto:'c2b', tone:'b'},
+    {k:'C', label:'Atravessar correndo, só pela alegria', goto:'c2c', tone:'c'}
+  ]}},
+  c2a:{ img:1, lines:[
+    {who:'', cls:'narr', t:'A água desenha arco-íris pequenos na névoa. Você guarda a imagem — para os dias em que o caminho for longo.'}
+  ], flag:'O arco-íris da cachoeira', goto:'ch3' },
+  c2b:{ img:1, lines:[
+    {who:'', cls:'narr', t:'Na pedra, quase apagada por musgo: "A luz volta para quem volta para a luz." Alguém esculpiu isto há muito tempo.'}
+  ], flag:'A inscrição da ponte', goto:'ch3' },
+  c2c:{ img:1, lines:[
+    {who:'', cls:'narr', t:'Você corre até o meio da ponte — e a pedra responde com um som de sino. O cervo levanta a cabeça, como se cumprimentasse.'}
+  ], flag:'O sino da ponte', goto:'ch3' },
+
+  ch3: { img:2, lines:[
+    {who:'', cls:'narr', t:'No fim da tarde, as chaminés de Andora aparecem sobre a colina. Na praça, junto da fonte, uma senhora de cabelos prateados e xale verde sorri com os braços abertos.'},
+    {who:'Moira', cls:'calm', t:'Chegue mais, caminhante! Eu sou Moira. A vila inteira sentiu sua lanterna acender na estrada — e as lanternas gostam de você.'}
+  ], choice:{ q:'O que responder a Moira?', opts:[
+    {k:'A', label:'"Muito prazer! Posso ajudar em algo na vila?"', goto:'c3a', tone:'a'},
+    {k:'B', label:'"Como a vila sentiu a minha lanterna?"', goto:'c3b', tone:'b'},
+    {k:'C', label:'Apresentar Lumo, que faz uma reverência', goto:'c3c', tone:'c'}
+  ]}},
+  c3a:{ img:2, lines:[
+    {who:'Moira', cls:'calm', t:'Ajuda é o que não falta por aqui — e gratidão também. Sente-se. A cadeira da lareira tem seu nome.'}
+  ], flag:'A boas-vindas de Andora', goto:'ch4' },
+  c3b:{ img:2, lines:[
+    {who:'Moira', cls:'calm', t:'Andora é feita de memórias acesas, meu bem. Quando uma luz nova chega, a vila inteira sonha com ela.'},
+    {who:'', cls:'narr', t:'Lumo pisca orgulhoso, soltando três faíscas — uma para cada casa mais próxima.'}
+  ], flag:'O segredo das lanternas', goto:'ch4' },
+  c3c:{ img:2, lines:[
+    {who:'Moira', cls:'calm', t:'Ah, e este é o seu pequeno guardião! Já vi a chama dele nos sonhos do vale. Seja bem-vindo, Lumo.'},
+    {who:'Lumo', cls:'calm', t:'✶ faz uma reverência perfeita e quase cai ✶'}
+  ], flag:'A reverência de Lumo', goto:'ch4' },
+
+  ch4: { img:3, lines:[
+    {who:'', cls:'narr', t:'Ao entardecer, você caminha até o Lago Espelho. A água reflete as montanhas como um vidro tranquilo. Na margem, uma mulher de véu e vestido índigo segura uma flor de prata que brilha sozinha.'},
+    {who:'Lady Vesper', cls:'calm', t:'Um caminhante com lanterna acesa... e um espírito de chama. Andora anda me mandando as visitas mais interessantes.'},
+    {who:'', cls:'narr', t:'Ela estende a lua-flor. A luz dela pulsa no mesmo ritmo do seu coração.'}
+  ], choice:{ q:'O que fazer com a lua-flor?', opts:[
+    {k:'A', label:'Aceitar com um agradecimento sincero', goto:'finale', tone:'a'},
+    {k:'B', label:'Aceitar, mas perguntando o que ela espera em troca', goto:'finale', tone:'b'},
+    {k:'C', label:'Oferecer algo em troca: uma memória feliz de hoje', goto:'finale', tone:'c'}
+  ]}},
+
+  finale: { img:3, lines:[
+    {who:'', cls:'narr', t:'E assim a primeira noite chega a Andora. As estrelas se refletem no lago duas vezes — as do céu e as da água — e, entre elas, uma lanterna pequena continua acesa. A sua.'}
+  ], end:true }
+};
+const CS_ENDINGS = {
+  a: { title:'O Amigo de Andora', text:'Você chegou com o coração aberto — e Andora percebeu. As cadeiras da lareira já têm seu nome.',
+    flags:['Casa em Andora','Afeição do vale'] },
+  b: { title:'O Leitor de Luzes', text:'Você perguntou mais do que respondeu. Andora gosta de curiosos: cada resposta virou uma porta.',
+    flags:['Segredos de Andora'] },
+  c: { title:'O Coração Generoso', text:'Você deu o que tinha — memórias, atenção, pequenas gentilezas. O vale guarda isso como ouro.',
+    flags:['Gentileza rara'] },
+  ab: { title:'O Caminhante Atento', text:'Metade abraço, metade pergunta. Você entendeu Andora sem precisar de um mapa.',
+    flags:['Equilíbrio'] },
+  ac: { title:'O Farol Viajante', text:'Onde você passar, as lanternas vão acender sozinhas.',
+    flags:['Portas abertas'] },
+  bc: { title:'O Amigo das Duas Margens', text:'Você guarda segredos e divide memórias — Andora te chama de "o da lanterna" com carinho.',
+    flags:['Enigma do vale'] }
+};
+const CS = { node:'start', line:0, typing:false, timer:null, cur:'', tones:[] };
+function markSeen() { window._introSeen = true; try { localStorage.setItem('andora_intro_v1','1'); } catch(e) {} }
+function hasSeen() { if (window._introSeen) return true; try { return localStorage.getItem('andora_intro_v1') === '1'; } catch(e) { return false; } }
+function csShowImg(i) {
+  const img = $('cs-img');
+  if (String(img.dataset.i || '-1') === String(i)) return;
+  img.dataset.i = i;
+  img.classList.remove('on');
+  setTimeout(() => { img.src = ASSETS[CS_FRAMES[i]]; img.classList.add('on'); }, 220);
+}
+function csType(t) {
+  clearInterval(CS.timer);
+  CS.cur = t; CS.typing = true;
+  $('cs-text').textContent = ''; $('cs-hint').style.opacity = 0.3;
+  let i = 0;
+  CS.timer = setInterval(() => {
+    i += 2;
+    $('cs-text').textContent = CS.cur.slice(0, i);
+    if (i >= CS.cur.length) { clearInterval(CS.timer); CS.typing = false; $('cs-text').textContent = CS.cur; $('cs-hint').style.opacity = 1; }
+  }, 15);
+}
+function csRender() {
+  const n = CS_NODES[CS.node];
+  if (n.img !== undefined) csShowImg(n.img);
+  $('cs-choices').classList.add('gone');
+  $('cs-dialog').classList.remove('gone');
+  CS.line = 0; csLine();
+}
+function csLine() {
+  const n = CS_NODES[CS.node];
+  if (CS.line < n.lines.length) {
+    const l = n.lines[CS.line++];
+    $('cs-speaker').textContent = l.who ? '— ' + l.who + ' —' : '';
+    $('cs-speaker').className = l.cls || '';
+    csType(l.t);
+    return;
+  }
+  if (n.flag) toast('✦ ' + n.flag);
+  if (n.choice) return csChoice(n.choice);
+  if (n.goto) { CS.node = n.goto; return csRender(); }
+  if (n.end) return csEnd();
+}
+function csChoice(ch) {
+  $('cs-dialog').classList.add('gone');
+  const box = $('cs-choices');
+  box.classList.remove('gone');
+  box.innerHTML = '<div class="q">— ' + ch.q + ' —</div>';
+  ch.opts.forEach(o => {
+    const b = document.createElement('button');
+    b.className = 'c-btn';
+    b.innerHTML = '<span class="k">' + o.k + '</span>' + o.label;
+    b.addEventListener('click', e => { e.stopPropagation(); if (o.tone) CS.tones.push(o.tone); CS.node = o.goto; csRender(); });
+    box.appendChild(b);
+  });
+}
+function csEnd() {
+  markSeen();
+  const tally = {a:0,b:0,c:0};
+  CS.tones.forEach(t => tally[t]++);
+  const sorted = Object.entries(tally).sort((x,y) => y[1]-x[1]);
+  let key;
+  if (sorted[0][1] >= 3) key = sorted[0][0];
+  else if (sorted[0][1] === sorted[1][1]) key = [sorted[0][0], sorted[1][0]].sort().join('');
+  else key = sorted[0][0];
+  const e = CS_ENDINGS[key] || CS_ENDINGS.a;
+  e.flags.forEach(f => addFlag(f));
+  const ov = $('cs-overlay');
+  ov.innerHTML = '<h2>' + e.title + '</h2><p>' + e.text + '</p>' +
+    '<div class="flags">' + e.flags.map(f => '<span class="flag">✦ ' + f + '</span>').join('') + '</div>' +
+    '<p style="margin-top:16px;font-size:12px;letter-spacing:2px;color:#9fd8e8">seu caminho: ' +
+    CS.tones.map(t => ({a:'acolhedor',b:'misterioso',c:'generoso'})[t]).join(' · ') + '</p>' +
+    '<div class="ov-actions">' +
+    '<button class="m-btn primary" id="cs-enter">🌿 Entrar no vale de Andora</button>' +
+    '<button class="m-btn" id="cs-replay">↺ Rever cutscene</button>' +
+    '<button class="m-btn" id="cs-home">☰ Menu</button></div>';
+  ov.classList.remove('hidden');
+  $('cs-enter').addEventListener('click', e2 => { e2.stopPropagation(); if (!WORLD) quickWorld(); showWorld(); });
+  $('cs-replay').addEventListener('click', e2 => { e2.stopPropagation(); startCutscene(); });
+  $('cs-home').addEventListener('click', e2 => { e2.stopPropagation(); showMenu(); });
+}
+function csAdvance() {
+  if (!$('cs-overlay').classList.contains('hidden')) return;
+  if (!$('cs-choices').classList.contains('gone')) return;
+  if (CS.typing) { clearInterval(CS.timer); CS.typing = false; $('cs-text').textContent = CS.cur; $('cs-hint').style.opacity = 1; return; }
+  csLine();
+}
+function startCutscene() {
+  CS.node = 'start'; CS.tones = [];
+  $('cs-overlay').classList.add('hidden');
+  const img = $('cs-img');
+  img.dataset.i = '0';
+  img.src = ASSETS[CS_FRAMES[0]];
+  img.classList.add('on');
+  showScreen('cutscene');
+  setTimeout(csRender, 300);
+}
+
+/* ============ AMIZADE ============ */
+let FRIENDS = {};
+function fGet(id) { return FRIENDS[id] || 0; }
+function fAdd(id, v) {
+  const old = fGet(id);
+  FRIENDS[id] = Math.min(100, old + v);
+  if (old < 100 && FRIENDS[id] === 100) toast('🌟 Você e ' + nameOf(id) + ' são Amigos do Vale!');
+  return FRIENDS[id];
+}
+function fLevelName(v) {
+  if (v < 15) return 'Desconhecido';
+  if (v < 40) return 'Conhecido';
+  if (v < 70) return 'Amigo';
+  if (v < 95) return 'Amigo íntimo';
+  return 'Amigo do vale';
+}
+function fGreeting(id) {
+  const v = fGet(id);
+  if (v >= 95) return '— Meu amigo do vale! O dia fica melhor assim.';
+  if (v >= 70) return '— Você já faz parte deste vale. Sente-se à vontade.';
+  if (v >= 40) return '— Ah, meu amigo! Sempre é um bom dia quando você aparece.';
+  if (v >= 15) return '— Que bom te ver por aqui de novo!';
+  return null;
+}
+
+/* ============ NPCs ============ */
+const NPC_TALK = {
+  moira: { name:'Moira, a Contadora', emoji:'🧶', c1:'#6a8e5a', c2:'#3c5a3c',
+    lines:[['Moira','Senta aqui, caminhante. A cadeira conhece histórias melhores que eu.'],['O Herói','Então comece por uma.']],
+    q:'Sobre o que conversar?', opts:[
+      {k:'A', label:'Sobre o apagão das luzes', end:['As três versões','Há três versões sobre o apagão. Todas começam com uma promessa — e terminam com uma porta que ninguém trancou.',['História do apagão']]},
+      {k:'B', label:'Sobre a vida dela no vale', end:['A fuga da Contadora','Vim parar aqui escapando de uma história que queria um final. Ainda escapo. Ela é paciente.',['Passado de Moira']]},
+      {k:'C', label:'Sobre o Lumo', end:['O antigo dono','Lumo? Ele já pertenceu a alguém. Isso é tudo o que ele me deixa contar.',['Mistério de Lumo']]}
+    ], quest:{ item:'🍎', n:3, title:'Maçãs para a torta', reward:'A torta de maçã de Moira'} },
+  bram: { name:'Bram, o Ferreiro', emoji:'🔨', c1:'#8a5a3a', c2:'#5a3420',
+    lines:[['Bram','Se veio encomendar espada, guarde a bolsa. Aqui se forja porta, panela e desculpa.'],['O Herói','E o que se forja para um caminhante?']],
+    q:'O que pedir a Bram?', opts:[
+      {k:'A', label:'Uma ferramenta de viagem', end:['O ferrão de Bram','Melhor que espada: um ferrão de acampar. Serve para fogueira, panela — e inimigos educados.',['Ferrão de acampar']]},
+      {k:'B', label:'Uma história de guerra', end:['O escudo compartilhado','Eu e Aldric carregamos o mesmo escudo. Ele carregou o resto — e ainda carrega.',['Laço Bram–Aldric']]},
+      {k:'C', label:'Se o Lumo pode ser consertado', end:['A peça faltante','Lumo não se conserta, moço. Ele se completa. Falta uma peça nele desde antes de você.',['Missão: peça de Lumo']]}
+    ]},
+  mira: { name:'Mira, a Padeira', emoji:'🍞', c1:'#d0a24c', c2:'#a87830',
+    lines:[['Mira','O pão acabou de sair do forno. Cheirinho de casa, né?'],['O Herói','Melhor cheiro do vale.']],
+    q:'O que conversar com Mira?', opts:[
+      {k:'A', label:'Sobre as receitas dela', end:['O segredo da massa','Farinha, água, tempo e conversa. Massa não sobe sem alguém contar o dia pra ela.',['Receita de família']]},
+      {k:'B', label:'Sobre a vila', end:['A praça que acolhe','Esta praça já viu guerra, festa e silêncio. Mas sempre ficou de pé — como a padaria.',['Coração da vila']]},
+      {k:'C', label:'Pedir um pão para a estrada', end:['O pão do caminhante','Toma. Pão de estrada dura três dias e a amizade dura mais.',['Pão do caminhante','🍞']]}
+    ]},
+  teo: { name:'Téo, o Aprendiz', emoji:'🧺', c1:'#5a7ab0', c2:'#3a5080',
+    lines:[['Téo','Você é aquele da lanterna! Me deixa segurar? Só um pouquinho?'],['O Herói','Talvez... com muito cuidado.']],
+    q:'O que fazer com Téo?', opts:[
+      {k:'A', label:'Deixar ele segurar a lanterna (com cuidado)', end:['O primeiro brilho','O olho dele brilha mais que a lanterna. Depois, ele conta pra vila inteira — em detalhes exagerados.',['Amizade de Téo']]},
+      {k:'B', label:'Ensinar um truque de mágica', end:['O truque do dedo','Ele passa a tarde inteira tentando fazer o polegar sumir. Metade da vila vem assistir.',['O aprendiz']]},
+      {k:'C', label:'Perguntar sobre as aventuras dele', end:['O tesouro do poço','Ele jura que no fundo do poço tem um dragão pequenininho. Moira pisca pra você: deixa ele acreditar.',['O dragão do poço']]}
+    ]},
+  pip: { name:'Pip, o Mercador', emoji:'🎒', c1:'#c07a9a', c2:'#8a4a6a',
+    lines:[['Pip','Tudo à venda! Menos o que importa — isso eu guardo.'],['O Herói','E o que você guarda?']],
+    q:'O que conversar com Pip?', opts:[
+      {k:'A', label:'Ver as mercadorias', end:['O catálogo impossível','Mapa usado — dois erros, um deles proposital. Garrafa de silêncio. Meias de segunda-feira.',['Inventário de Pip']]},
+      {k:'B', label:'Ouvir uma fofoca', end:['A fofoca da flor','A Dama do Lago anda pagando em flores. E ela paga bem, moço. Cuidado: ela paga bem.',['Boato de Vesper']]},
+      {k:'C', label:'Sobre as estradas', end:['A estrada que chega','A estrada da costa é mais longa. É também a única que chega.',['Dica de rota']]}
+    ]},
+  lyra: { name:'Lyra, a Trovadora', emoji:'🎻', c1:'#b06a8a', c2:'#7a3a5a',
+    lines:[['Lyra','Se tem uma música que te persegue, eu troco por uma história.'],['O Herói','Tenho uma melodia na cabeça. Sempre tive.']],
+    q:'O que fazer?', opts:[
+      {k:'A', label:'Trocar história por música', end:['A melodia conhecida','Ela toca a melodia do apagão — que você conhece, sem saber de onde. Agora ela persegue você melhor.',['Melodia do apagão']]},
+      {k:'B', label:'Perguntar para onde ela vai', end:['O bis infinito','Onde terminarem as minhas cordas. E recomeça quando alguém pedir bis.',['Rota de Lyra']]},
+      {k:'C', label:'Pedir uma canção para o Lumo', end:['A canção do espírito','Lumo brilha em ritmo de valsa. Você jura que ele dançou. Lyra também.',['A valsa de Lumo']]}
+    ]},
+  kael: { name:'Kael, o Lenhador', emoji:'🪓', c1:'#6a8a5a', c2:'#3e5c36',
+    lines:[['Kael','Árvore boa é a que continua de pé. Corte só o que o bosque já soltou.'],['O Herói','Faz sentido.']],
+    q:'O que perguntar a Kael?', opts:[
+      {k:'A', label:'Sobre o bosque', end:['O bosque que respira','À noite as árvores se mexem um passo. Só um. Ninguém sabe pra onde — e todo mundo finge que não viu.',['Segredo do bosque']]},
+      {k:'B', label:'Se ele precisa de ajuda', end:['Lenha para o inverno','Aceito ajuda sim: três pedras do riacho para amolar o machado. Rápido e justo.',['Missão do lenhador']]},
+      {k:'C', label:'Sobre a ponte de pedra', end:['A ponte que canta','Ela era uma porta. Só que o vale decidiu que ponte é mais útil. Ainda canta às vezes.',['A ponte antiga']]}
+    ], quest:{ item:'🪨', n:3, title:'Pedras do riacho', reward:'O agradecimento de Kael'} },
+  breno: { name:'Breno, o Pastor', emoji:'🐐', c1:'#a8905a', c2:'#76603a',
+    lines:[['Breno','As cabras sabem o nome das nuvens. Eu só anoto.'],['O Herói','Sério? Como se chama aquela?']],
+    q:'O que conversar com Breno?', opts:[
+      {k:'A', label:'Sobre os nomes das nuvens', end:['O atlas das nuvens','Aquela ali é a "Cabra Roncadora". Aquela outra é a "Promessa de Chuva". Tenho duzentas.',['O atlas de Breno']]},
+      {k:'B', label:'Sobre a vida na montanha', end:['O silêncio lá de cima','Lá de cima o mundo fica quieto o bastante pra gente ouvir o próprio nome sendo lembrado.',['Vida de pastor']]},
+      {k:'C', label:'Se as cabras têm nomes', end:['A cabra Filosofa','Todas têm. Esta aqui chama-se Filósofa, porque só existe pra contrariar.',['As cabras de Breno']]}
+    ]},
+  silas: { name:'Silas, o Estudioso', emoji:'📚', c1:'#5a6a9a', c2:'#36446e',
+    lines:[['Silas','Cada livro aqui alguém leu até o fim. Por isso estão tristes.'],['O Herói','Livros não ficam tristes.']],
+    q:'O que perguntar?', opts:[
+      {k:'A', label:'O que há nas páginas trancadas', end:['As páginas trancadas','O seu nome. Escrito antes de você aprender a escrever.',['O nome no livro']]},
+      {k:'B', label:'Como Andora guarda as luzes', end:['A biblioteca de chamas','Cada lembrança acesa vira uma palavra. Cada palavra, um livro. Esta vila é uma biblioteca viva.',['Como Andora funciona']]},
+      {k:'C', label:'Se ele me conhece', end:['A sombra mais antiga','Conheço a sua sombra. Ela é mais antiga que você.',['Lore da sombra']]}
+    ]},
+  wren: { name:'Wren, a Fantasma', emoji:'🕯️', c1:'#a0c8e0', c2:'#6a90b0',
+    lines:[['Wren','Você não está morto, né? É só para eu saber como começar a conversa.'],['O Herói','Não estou. Pode começar normal.']],
+    q:'O que fazer com Wren?', opts:[
+      {k:'A', label:'Prometer visitá-la sempre', end:['O contrato de domingo','Sempre é muito tempo. Então começa com domingo? Ela te dá uma pedra bonita: é um contrato.',['Afeição de Wren','Pedra bonita']]},
+      {k:'B', label:'Perguntar sobre a boneca', end:['O nome escolhido','Ela se chama Névoa. Eu escolhi o nome. Ninguém escolheu o meu.',['História de Wren']]},
+      {k:'C', label:'Contar uma história para ela', end:['A vela que ficou','Ela dorme antes do final. Mas a última vela do bosque não se apaga essa noite.',['Afeição de Wren']]}
+    ]},
+  nilo: { name:'Nilo, o Pescador', emoji:'🎣', c1:'#4a7a8a', c2:'#2e5460',
+    lines:[['Nilo','Água parada guarda mais que peixe, meu jovem.'],['O Herói','E o que ela guarda?']],
+    q:'O que fazer com Nilo?', opts:[
+      {k:'A', label:'Perguntar o que o lago guarda', end:['O barco sozinho','Barcos. Promessas. E um remo que bate na água sozinho nas noites de lua cheia.',['Lore do lago']]},
+      {k:'B', label:'Pescar em silêncio com ele', end:['A melhor conversa','Vocês pescam em silêncio por duas horas. É a melhor conversa do vale.',['Laço com Nilo']]},
+      {k:'C', label:'Pedir uma lição de pesca', end:['O nó do pescador','Primeiro: paciência. Segundo: o nó. Terceiro: mais paciência. Você aprende rápido.',['Habilidade: pesca']]}
+    ]},
+  iara: { name:'Iara, do Lago', emoji:'🌊', c1:'#4a9ac0', c2:'#2e6e90',
+    lines:[['Iara','Canta baixinho pro lago. Ele responde — ouve com atenção.'],['O Herói','Canta você primeiro.']],
+    q:'O que fazer com Iara?', opts:[
+      {k:'A', label:'Ouvir a canção do lago', end:['A canção das águas','A melodia é a mesma que você ouve nos sonhos desde criança. O lago canta devagar, para não assustar.',['A canção do lago']]},
+      {k:'B', label:'Perguntar sobre a Vesper', end:['A dama da margem','Ela vem quando a lua está cheia. Não é daqui — mas o lago gosta dela. Isso já diz muita coisa.',['Quem é Vesper']]},
+      {k:'C', label:'Pescar junto com ela', end:['As redes de Iara','Ela pesca ouvindo as águas. Você pesca ouvindo ela. Vocês voltam com peixe — e com a canção.',['Habilidade: pesca','🐟']]}
+    ]},
+  vesper: { name:'Lady Vesper', emoji:'🌙', c1:'#6a5a9a', c2:'#443670',
+    lines:[['Lady Vesper','Voltou. A água do lago ainda fala de você.'],['O Herói','Então vamos ao ponto.']],
+    q:'O que dizer a Vesper?', opts:[
+      {k:'A', label:'Por que você me observa?', end:['O acendedor','Você acende coisas que deveriam estar mortas. Isso é raro. E educativo.',['Curiosidade de Vesper']]},
+      {k:'B', label:'Você é a vilã desta história?', end:['A pontualidade do mal','Vilã é quem chega atrasado para a compaixão. Eu chego pontual.',['Filosofia de Vesper']]},
+      {k:'C', label:'Oferecer a lua-flor de volta', end:['O presente que volta','Ela recusa, gentil. "Flores dadas não voltam. Memórias, sim." Ela guarda uma do dia em que você chegou.',['Presente de Vesper']]}
+    ]},
+  aldric: { name:'Sir Aldric', emoji:'🛡️', c1:'#7a8494', c2:'#4e5866',
+    lines:[['Sir Aldric','Senta. O piquete não pergunta nada. Eu também não.'],['O Herói','Talvez eu devesse perguntar.']],
+    q:'O que perguntar?', opts:[
+      {k:'A', label:'Por que você guarda o lago', end:['O guardião do caminho','Porque proteger um lugar não é o mesmo que proteger quem nele mora. Aprendi — e fiquei.',['Passado de Aldric']]},
+      {k:'B', label:'Se conhece o Bram', end:['Três desculpas','Forjou meu escudo. E três desculpas para eu não voltar para a corte. Todas boas.',['Laço Aldric–Bram']]},
+      {k:'C', label:'O que há nas montanhas', end:['A caverna que canta','À noite a caverna canta. Quem escuta demais esquece o caminho de volta — e não liga.',['Lore da montanha']]}
+    ]},
+  lumo: { name:'Lumo', emoji:'✨', c1:'#e8c060', c2:'#b08830',
+    lines:[['Lumo','✶ ✶ ✶']],
+    q:'O que Lumo quer dizer?', opts:[
+      {k:'A', label:'"Está feliz?"', end:['As fagulhas felizes','✶ gira em círculos soltando fagulhas quentes ✶ O sol parece sorrir junto.',['Alegria de Lumo']]},
+      {k:'B', label:'"Sente falta de alguém?"', end:['O silêncio de Lumo','✶ encosta na lanterna… e não pisca por um tempo muito longo ✶ Você decide não perguntar de novo hoje.',['Dor de Lumo']]},
+      {k:'C', label:'"O que achou do vale?"', end:['O pequeno sol','✶ voa em volta de você fazendo um oito perfeito ✶ Lumo aprovou. É oficial.',['Laço com Lumo']]}
+    ]}
+};
+function nameOf(id) { return id === 'lumo' ? 'Lumo' : (NPC_TALK[id] ? NPC_TALK[id].name : id); }
+
+/* ============ MAPA DE CENAS ============ */
+const SCENE_MAP = {
+  floresta: {
+    name:'Floresta Serena', img:'sc_floresta', left:'lago', right:'vila',
+    npcs:[{id:'lyra',x:42,y:52},{id:'kael',x:22,y:56},{id:'silas',x:62,y:50},{id:'wren',x:35,y:44},{id:'breno',x:74,y:42}],
+    animals:[{x:70,y:40,emoji:'🦌',name:'os cervos'},{x:48,y:58,emoji:'🐇',name:'os coelhos'}],
+    items:[{x:28,y:62,e:'🍄',n:'Cogumelo'},{x:55,y:60,e:'🌿',n:'Erva'},{x:66,y:64,e:'🪨',n:'Pedra'}],
+    horse:{x:50,y:82}, food:{x:40,y:76,name:'o capim do bosque'}, water:{x:48,y:58,name:'o riacho'},
+    glows:[]
+  },
+  vila: {
+    name:'Vila de Andora', img:'sc_vila', left:'floresta', right:'lago',
+    npcs:[{id:'moira',x:46,y:48},{id:'bram',x:36,y:44},{id:'mira',x:16,y:46},{id:'teo',x:54,y:50},{id:'pip',x:72,y:48}],
+    animals:[{x:60,y:56,emoji:'🐕',name:'o cachorro'},{x:26,y:56,emoji:'🐔',name:'as galinhas'}],
+    items:[{x:20,y:62,e:'🍎',n:'Maçã'},{x:42,y:62,e:'🌸',n:'Flor'},{x:64,y:60,e:'🍞',n:'Pão'}],
+    horse:{x:14,y:82}, food:{x:64,y:78,name:'o gramado'}, water:{x:48,y:52,name:'a fonte'},
+    glows:[[10,38],[30,36],[52,36],[72,38]]
+  },
+  lago: {
+    name:'Lago Espelho', img:'sc_lago', left:'vila', right:'floresta',
+    npcs:[{id:'nilo',x:46,y:46},{id:'vesper',x:76,y:52},{id:'iara',x:62,y:56},{id:'aldric',x:20,y:54}],
+    animals:[{x:34,y:48,emoji:'🦆',name:'os patos'},{x:52,y:42,emoji:'🦢',name:'os cisnes'}],
+    items:[{x:24,y:62,e:'🐟',n:'Peixe'},{x:58,y:64,e:'🪶',n:'Pena'},{x:70,y:62,e:'🐚',n:'Concha'}],
+    horse:{x:22,y:82}, food:{x:30,y:76,name:'o gramado'}, water:{x:42,y:52,name:'o lago'},
+    glows:[[46,40]]
+  }
+};
+
+/* ============ ESTADO DO JOGO ============ */
+let sceneId = 'vila';
+let dayT = 0.32;
+const DAY_LEN = 300;
+let visitedTalks = {};
+let INV = {};          // {Maçã: 2, Flor: 1}
+let INV_SEL = null;
+let QUESTS = {};       // {moira: {got: n}}
+const player = { x:50, target:null, facing:1, moving:false, frame:0, ft:0, y:0, vy:0, onGround:true, stamina:100 };
+const horse = { mounted:false, x:14, y:82, facing:1, hunger:80, thirst:78, energy:90, mode:'idle', modeT:0, targetX:null, targetName:'' };
+let projectiles = [];
+let talking = null, talkState='lines', talkLines=[], talkIdx=0, talkTyping=false, talkTimer=null, talkCur='';
+let sessionStart = Date.now();
+
+/* ============ CICLO DIURNO ============ */
+function dayInfo() {
+  const elev = Math.sin((dayT - 0.25) * Math.PI * 2);
+  const night = Math.max(0, -elev);
+  const golden = Math.max(0, 1 - Math.abs(elev) * 3.2);
+  let label = '☀️ tarde agradável';
+  if (dayT < 0.20) label = '🌙 noite tranquila';
+  else if (dayT < 0.32) label = '🌅 amanhecer dourado';
+  else if (dayT < 0.62) label = '☀️ tarde agradável';
+  else if (dayT < 0.78) label = '🌇 entardecer';
+  else label = '🌙 noite tranquila';
+  return { elev, night, golden, label };
+}
+function updateSky() {
+  const di = dayInfo();
+  $('day-label').textContent = di.label;
+  const dp = Math.min(1, Math.max(0, (dayT - 0.25) / 0.5));
+  $('sun').style.opacity = di.elev > -0.12 ? 1 : 0;
+  $('sun').style.left = (10 + dp * 80) + '%';
+  $('sun').style.top = (16 - Math.sin(dp * Math.PI) * 9) + '%';
+  const mp = ((dayT + 0.5) % 1 - 0.25 + 1) % 1;
+  const mp2 = Math.min(1, Math.max(0, mp / 0.5));
+  $('moon').style.opacity = di.night > 0.05 ? Math.min(1, di.night * 1.6) : 0;
+  $('moon').style.left = (10 + mp2 * 80) + '%';
+  $('moon').style.top = (16 - Math.sin(mp2 * Math.PI) * 8) + '%';
+  $('tint-night').style.opacity = di.night * 0.95;
+  $('tint-gold').style.opacity = di.elev >= 0 ? di.golden * 0.85 : 0;
+  const morning = Math.max(0, 1 - Math.abs(dayT - 0.30) * 9);
+  $('tint-morning').style.opacity = di.elev > 0 ? morning * 0.8 : 0;
+  document.querySelectorAll('.glow-spot').forEach(g => g.style.opacity = di.night * 0.95);
+  const cv = $('sky-canvas'), cx = cv.getContext('2d');
+  cx.clearRect(0, 0, cv.width, cv.height);
+  if (di.night > 0.08) {
+    for (let i = 0; i < 46; i++) {
+      const sx = (i * 137.5) % cv.width, sy = (i * 89.7) % (cv.height * 0.55);
+      const tw = 0.4 + 0.6 * Math.abs(Math.sin(performance.now() * 0.001 + i * 1.7));
+      cx.fillStyle = 'rgba(255,255,240,' + (tw * di.night * 0.9) + ')';
+      cx.fillRect(sx, sy, 2.2, 2.2);
+    }
+  }
+  if (di.night > 0.22) {
+    for (let i = 0; i < 14; i++) {
+      const t = performance.now() * 0.0004 + i * 2.1;
+      const fx = ((i * 211 + Math.sin(t) * 90) % (cv.width + 80)) - 40;
+      const fy = cv.height * 0.45 + ((i * 97) % (cv.height * 0.5)) + Math.cos(t * 1.7) * 26;
+      const glow = 0.35 + 0.65 * Math.abs(Math.sin(t * 2.4));
+      const g = cx.createRadialGradient(fx, fy, 1, fx, fy, 13);
+      g.addColorStop(0, 'rgba(255,230,120,' + (glow * di.night) + ')');
+      g.addColorStop(1, 'rgba(255,230,120,0)');
+      cx.fillStyle = g; cx.fillRect(fx - 15, fy - 15, 30, 30);
+    }
+  }
+}
+
+/* ============ CENAS / HOTSPOTS ============ */
+function loadScene(id, fromDir) {
+  sceneId = id;
+  const sc = SCENE_MAP[id];
+  $('scene-img').src = ASSETS[sc.img];
+  $('region-name').textContent = sc.name;
+  player.x = fromDir === 'right' ? 86 : fromDir === 'left' ? 14 : 50;
+  player.target = null; player.y = 0; player.vy = 0;
+  if (!horse.mounted) {
+    if (horse.mode === 'seek' || horse.mode === 'comendo' || horse.mode === 'bebendo') { horse.mode = 'descansando'; horse.targetX = null; }
+    horse.x = sc.horse.x;
+    if (horse.hunger < 55 || horse.thirst < 55) {
+      setTimeout(() => { if (!horse.mounted && horse.mode === 'descansando') {
+        if (horse.thirst <= horse.hunger) startHorseSeek('beber'); else startHorseSeek('comer');
+      }}, 600);
+    }
+  }
+  const gl = $('glow-layer');
+  gl.innerHTML = '';
+  (sc.glows || []).forEach(g => {
+    const d = document.createElement('div');
+    d.className = 'glow-spot';
+    d.style.left = g[0] + '%'; d.style.top = g[1] + '%';
+    d.style.width = '110px'; d.style.height = '110px';
+    gl.appendChild(d);
+  });
+  const hs = $('hotspots');
+  hs.innerHTML = '';
+  sc.npcs.forEach(n => {
+    const data = NPC_TALK[n.id];
+    const b = document.createElement('button');
+    b.className = 'hotspot';
+    b.style.left = n.x + '%'; b.style.top = n.y + '%';
+    b.innerHTML = '<span class="bub">💬 ' + data.emoji + '</span><span class="lbl">' + data.name + '</span>';
+    b.addEventListener('click', e => { e.stopPropagation(); walkTo(n.x, () => startTalk(n.id)); });
+    hs.appendChild(b);
+  });
+  (sc.animals || []).forEach(a => {
+    const b = document.createElement('button');
+    b.className = 'hotspot';
+    b.style.left = a.x + '%'; b.style.top = a.y + '%';
+    b.innerHTML = '<span class="bub">' + a.emoji + '</span><span class="lbl">' + a.name + '</span>';
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      walkTo(a.x, () => {
+        toast('♥ Você faz carinho em ' + a.name + ' — ' + a.emoji + ' está feliz');
+        if (Math.random() < 0.35) addFlag('Carinho em ' + a.name);
+      });
+    });
+    hs.appendChild(b);
+  });
+  (sc.items || []).forEach(it => {
+    const b = document.createElement('button');
+    b.className = 'hotspot';
+    b.style.left = it.x + '%'; b.style.top = it.y + '%';
+    b.innerHTML = '<span class="bub">' + it.e + '</span><span class="lbl">coletar ' + it.n + '</span>';
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      walkTo(it.x, () => {
+        INV[it.n] = (INV[it.n] || 0) + 1;
+        b.style.display = 'none';
+        toast('🎒 ' + it.e + ' ' + it.n + ' coletado! (' + INV[it.n] + ')');
+        checkQuests();
+        setTimeout(() => { b.style.display = ''; }, 45000);
+      });
+    });
+    hs.appendChild(b);
+  });
+  $('exit-left').querySelector('small').textContent = SCENE_MAP[sc.left].name;
+  $('exit-right').querySelector('small').textContent = SCENE_MAP[sc.right].name;
+  renderQuests();
+}
+function goScene(dir) {
+  const sc = SCENE_MAP[sceneId];
+  const to = dir === 'left' ? sc.left : sc.right;
+  const wrap = $('scene-wrap');
+  wrap.style.transition = 'opacity .35s ease';
+  wrap.style.opacity = '0.15';
+  setTimeout(() => {
+    loadScene(to, dir === 'left' ? 'right' : 'left');
+    wrap.style.opacity = '1';
+    saveWorld(false);
+  }, 360);
+}
+function walkTo(px, cb) {
+  player.target = { x: px, cb };
+  player.facing = px > player.x ? 1 : -1;
+}
+
+/* ============ INVENTÁRIO / MISSÕES / FÍSICA ============ */
+function openInv() {
+  const g = $('inv-grid');
+  g.innerHTML = '';
+  const keys = Object.keys(INV).filter(k => INV[k] > 0);
+  if (!keys.length) g.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--dim);padding:18px">Vazio! Colete flores, frutas e pedras pelo vale.</div>';
+  keys.forEach(k => {
+    const emoji = ({'Maçã':'🍎','Flor':'🌸','Cogumelo':'🍄','Erva':'🌿','Pedra':'🪨','Pão':'🍞','Peixe':'🐟','Pena':'🪶','Concha':'🐚'})[k] || '📦';
+    const d = document.createElement('div');
+    d.className = 'inv-slot';
+    d.innerHTML = emoji + '<div class="nm">' + k + '</div><div class="n">' + INV[k] + '</div>';
+    d.addEventListener('click', () => {
+      INV_SEL = k;
+      document.querySelectorAll('.inv-slot').forEach(s => s.style.borderColor = '');
+      d.style.borderColor = 'var(--sun)';
+    });
+    g.appendChild(d);
+  });
+  $('inv-panel').classList.remove('hidden');
+}
+function throwSelected() {
+  if (!INV_SEL || !INV[INV_SEL]) { toast('Selecione um item primeiro!'); return; }
+  INV[INV_SEL]--;
+  const emoji = ({'Maçã':'🍎','Flor':'🌸','Cogumelo':'🍄','Erva':'🌿','Pedra':'🪨','Pão':'🍞','Peixe':'🐟','Pena':'🪶','Concha':'🐚'})[INV_SEL] || '📦';
+  projectiles.push({
+    x: player.x, y: 120, vx: player.facing * 260 + (Math.random()-0.5)*60, vy: -420,
+    bounces: 0, el: null, emoji
+  });
+  openInv();
+}
+function updateProjectiles(dt) {
+  const wrap = $('scene-wrap');
+  projectiles = projectiles.filter(p => {
+    p.vy += 1400 * dt;
+    p.x += p.vx * dt * 0.32;
+    p.y += p.vy * dt * 0.32;
+    if (p.y >= 0) {
+      p.y = 0; p.vy *= -0.42; p.vx *= 0.7; p.bounces++;
+      if (p.bounces > 2) {
+        if (p.el) p.el.remove();
+        return false;
+      }
+    }
+    if (!p.el) {
+      p.el = document.createElement('div');
+      p.el.className = 'proj';
+      p.el.textContent = p.emoji;
+      wrap.appendChild(p.el);
+    }
+    p.el.style.left = p.x + '%';
+    p.el.style.bottom = (12 + (-p.y) * 0.08) + '%';
+    return true;
+  });
+}
+function checkQuests() { renderQuests(); }
+function renderQuests() {
+  const el = $('quest-list');
+  const rows = [];
+  Object.entries(NPC_TALK).forEach(([id, d]) => {
+    if (!d.quest) return;
+    const got = Math.min(d.quest.n, INV[d.quest.item === '🍎' ? 'Maçã' : d.quest.item === '🪨' ? 'Pedra' : d.quest.item === '🐟' ? 'Peixe' : ''] || 0);
+    const done = QUESTS[id + '_done'];
+    rows.push((done ? '✅ ' : '▫️ ') + d.emoji + ' ' + d.quest.title + ' — ' + (done ? 'concluída!' : got + '/' + d.quest.n));
+  });
+  el.innerHTML = rows.length ? rows.join('<br>') : '—';
+}
+
+/* ============ CAVALO ============ */
+function horseUpdate(dt) {
+  const sc = SCENE_MAP[sceneId];
+  if (horse.mounted) {
+    horse.x = player.x; horse.facing = player.facing;
+    horse.hunger = Math.max(0, horse.hunger - dt * 0.55);
+    horse.thirst = Math.max(0, horse.thirst - dt * 0.7);
+    horse.energy = Math.max(0, horse.energy - dt * 0.5);
+    horse.mode = 'com você';
+  } else {
+    if (horse.mode === 'seek') {
+      const d = horse.targetX - horse.x;
+      if (Math.abs(d) < 1.5) { horse.mode = horse.targetName.startsWith('comer') ? 'comendo' : 'bebendo'; horse.modeT = 0; }
+      else { horse.x += Math.sign(d) * dt * 9; horse.facing = Math.sign(d); }
+    } else if (horse.mode === 'comendo') {
+      horse.modeT += dt; horse.hunger = Math.min(100, horse.hunger + dt * 13);
+      if (horse.hunger >= 100 || horse.modeT > 9) {
+        if (horse.thirst < 70) startHorseSeek('beber');
+        else { horse.mode = 'descansando'; toast('🐴 O cavalo terminou de comer e está satisfeito!'); }
+      }
+    } else if (horse.mode === 'bebendo') {
+      horse.modeT += dt; horse.thirst = Math.min(100, horse.thirst + dt * 13);
+      if (horse.thirst >= 100 || horse.modeT > 9) {
+        if (horse.hunger < 70) startHorseSeek('comer');
+        else { horse.mode = 'descansando'; toast('🐴 O cavalo bebeu água e está revigorado!'); }
+      }
+    } else {
+      horse.energy = Math.min(100, horse.energy + dt * 2.2);
+      horse.hunger = Math.min(100, horse.hunger + dt * 0.25);
+      horse.thirst = Math.min(100, horse.thirst + dt * 0.25);
+    }
+  }
+  $('bar-hunger').style.width = horse.hunger + '%';
+  $('bar-thirst').style.width = horse.thirst + '%';
+  $('bar-energy').style.width = horse.energy + '%';
+  $('horse-mode').textContent = horse.mounted ? 'montado' : horse.mode;
+  $('horse-tip').textContent =
+    horse.mounted ? 'desça para ele pastar e beber' :
+    horse.mode === 'comendo' ? '🌾 pastando...' :
+    horse.mode === 'bebendo' ? '💧 bebendo água...' :
+    horse.mode === 'seek' ? 'a caminho de ' + horse.targetName + '...' :
+    'descansando — pronto';
+  $('w-horse').textContent = horse.mounted ? '🐴 Descer' : '🐴 Montar';
+}
+function startHorseSeek(kind) {
+  const sc = SCENE_MAP[sceneId];
+  const spot = kind === 'comer' ? sc.food : sc.water;
+  horse.targetX = spot.x;
+  horse.targetName = (kind === 'comer' ? 'comer em ' : 'beber em ') + spot.name;
+  horse.mode = 'seek';
+  toast('🐴 O cavalo foi ' + horse.targetName);
+}
+function toggleHorse() {
+  if (horse.mounted) {
+    horse.mounted = false;
+    toast('🐴 Você desceu do cavalo');
+    if (horse.hunger < 70 || horse.thirst < 70) {
+      if (horse.thirst <= horse.hunger) startHorseSeek('beber'); else startHorseSeek('comer');
+    } else horse.mode = 'descansando';
+    return;
+  }
+  if (Math.abs(horse.x - player.x) > 18) { walkTo(horse.x, () => toggleHorse()); return; }
+  if (horse.hunger < 15 || horse.thirst < 15) {
+    toast('💔 O cavalo está com muita fome ou sede — deixa ele se recuperar primeiro!');
+    return;
+  }
+  horse.mounted = true; horse.mode = 'com você';
+  toast('🐴 Você montou! É mais rápido — e gasta fome e sede do cavalo.');
+}
+
+/* ============ CONVERSA ============ */
+function startTalk(id) {
+  if (talking) return;
+  const data = NPC_TALK[id];
+  if (!data) return;
+  talking = id;
+  talkLines = data.lines.map(l => ({ who: l[0], t: l[1] }));
+  const greet = fGreeting(id);
+  if (greet && id !== 'lumo') talkLines.unshift({ who: nameOf(id), t: greet.replace('— ', '') });
+  talkIdx = 0; talkState = 'lines';
+  const av = $('talk-avatar');
+  av.style.background = `linear-gradient(135deg, ${data.c1}, ${data.c2})`;
+  av.innerHTML = '<div style="font-size:40px">' + data.emoji + '</div>';
+  $('talk').classList.remove('gone');
+  $('talk-choices').innerHTML = '';
+  const v = fGet(id);
+  $('talk-friend').innerHTML = '💚 amizade <span class="fbar"><i style="width:' + v + '%"></i></span> ' + v + '/100 · ' + fLevelName(v);
+  talkRender();
+}
+function talkType(t) {
+  clearInterval(talkTimer);
+  talkCur = t; talkTyping = true;
+  $('talk-text').textContent = ''; $('talk-hint').style.opacity = 0.3;
+  let i = 0;
+  talkTimer = setInterval(() => {
+    i += 2;
+    $('talk-text').textContent = talkCur.slice(0, i);
+    if (i >= talkCur.length) { clearInterval(talkTimer); talkTyping = false; $('talk-text').textContent = talkCur; $('talk-hint').style.opacity = 1; }
+  }, 16);
+}
+function talkRender() {
+  const data = NPC_TALK[talking];
+  if (talkIdx < talkLines.length) {
+    const l = talkLines[talkIdx++];
+    const isPlayer = l.who === 'O Herói';
+    $('talk-name').textContent = isPlayer ? heroLabel() : nameOf(talking);
+    if (isPlayer) {
+      $('talk-avatar').innerHTML = '<img src="' + ASSETS.hs_parado + '" style="filter:' + heroFilter() + '">';
+    } else {
+      $('talk-avatar').style.background = `linear-gradient(135deg, ${data.c1}, ${data.c2})`;
+      $('talk-avatar').innerHTML = '<div style="font-size:40px">' + data.emoji + '</div>';
+    }
+    talkType(l.t.replace(/\bseu\b/g, heroLabel()));
+    return;
+  }
+  talkState = 'choices';
+  $('talk-hint').textContent = 'escolha uma opção';
+  const box = $('talk-choices');
+  box.innerHTML = '';
+  // opção de presente / missão
+  if (data.quest && !QUESTS[talking + '_done']) {
+    const itemMap = { '🍎':'Maçã', '🪨':'Pedra', '🐟':'Peixe' };
+    const item = itemMap[data.quest.item];
+    const got = INV[item] || 0;
+    if (got >= data.quest.n) {
+      const qb = document.createElement('button');
+      qb.className = 't-btn';
+      qb.innerHTML = '<b style="margin-right:8px">🎁</b>Entregar ' + data.quest.n + ' ' + data.quest.item + ' — ' + data.quest.title;
+      qb.addEventListener('click', e => {
+        e.stopPropagation();
+        INV[item] -= data.quest.n;
+        QUESTS[talking + '_done'] = true;
+        fAdd(talking, 12);
+        addFlag('Missão concluída: ' + data.quest.title);
+        $('talk-text').textContent = 'Você entregou ' + data.quest.n + ' ' + data.quest.item + '! ' + data.quest.reward + ' é seu — muito obrigado!';
+        box.innerHTML = '';
+        talkState = 'ended';
+        renderQuests();
+        $('talk-hint').innerHTML = '▶ clique para fechar';
+      });
+      box.appendChild(qb);
+    }
+  }
+  // presente
+  const giftBtn = document.createElement('button');
+  giftBtn.className = 't-btn';
+  giftBtn.innerHTML = '<b style="margin-right:8px">🎁</b>Presentear (usa o primeiro item do inventário · +3 amizade)';
+  giftBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    const k = Object.keys(INV).find(k2 => INV[k2] > 0);
+    if (!k) { toast('Seu inventário está vazio!'); return; }
+    INV[k]--;
+    fAdd(talking, 3);
+    $('talk-text').textContent = 'Você deu um(a) ' + k + ' de presente. ' + nameOf(talking) + ' sorri — e a amizade cresce.';
+    box.innerHTML = '';
+    talkState = 'ended';
+    $('talk-hint').innerHTML = '▶ clique para fechar';
+  });
+  box.appendChild(giftBtn);
+  data.opts.forEach(o => {
+    const b = document.createElement('button');
+    b.className = 't-btn';
+    b.innerHTML = '<b style="margin-right:8px">' + o.k + '.</b>' + o.label;
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      const [title, text, fls] = o.end;
+      talkState = 'ended';
+      $('talk-text').textContent = text;
+      $('talk-name').textContent = nameOf(talking);
+      box.innerHTML = '';
+      (fls || []).forEach(f => { if (['🍞','🐟'].includes(f)) { INV[f === '🍞' ? 'Pão' : 'Peixe'] = (INV[f === '🍞' ? 'Pão' : 'Peixe'] || 0) + 1; } else addFlag(f); });
+      const visitKey = talking + '@' + sceneId;
+      const first = !visitedTalks[visitKey];
+      visitedTalks[visitKey] = true;
+      const gain = 5 + (first ? 3 : 0);
+      const nv = fAdd(talking, gain);
+      $('talk-friend').innerHTML = '💚 amizade <span class="fbar"><i style="width:' + nv + '%"></i></span> ' + nv + '/100 · ' + fLevelName(nv) + ' <span style="color:#9fd8e8">(+' + gain + ')</span>';
+      toast('✦ ' + title + ' · 💚 +' + gain + ' amizade');
+      $('talk-hint').innerHTML = '▶ clique para fechar';
+    });
+    box.appendChild(b);
+  });
+}
+function talkAdvance() {
+  if (!talking) return;
+  if (talkTyping) { clearInterval(talkTimer); talkTyping = false; $('talk-text').textContent = talkCur; $('talk-hint').style.opacity = 1; return; }
+  if (talkState === 'choices') return;
+  if (talkState === 'ended') return endTalk();
+  talkRender();
+}
+function endTalk() { talking = null; $('talk').classList.add('gone'); }
+$('talk').addEventListener('click', talkAdvance);
+
+/* ============ LOOP PRINCIPAL (com física) ============ */
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  dayT = (dayT + dt / DAY_LEN) % 1;
+  if (!$('world').classList.contains('hidden')) {
+    const running = (keys['shift'] && player.stamina > 2);
+    if (running) player.stamina = Math.max(0, player.stamina - dt * 26);
+    else player.stamina = Math.min(100, player.stamina + dt * 16);
+    $('stamina-bar').style.width = player.stamina + '%';
+
+    if (!talking) {
+      let manual = 0;
+      if (keys['a'] || keys['arrowleft']) manual = -1;
+      if (keys['d'] || keys['arrowright']) manual = 1;
+      const speed = (horse.mounted ? 42 : running ? 36 : 22);
+      if (manual) {
+        player.target = null;
+        player.x = Math.max(3, Math.min(97, player.x + manual * dt * speed));
+        player.facing = manual;
+        player.moving = true;
+      } else if (player.target) {
+        const d = player.target.x - player.x;
+        if (Math.abs(d) < 0.8) {
+          player.x = player.target.x; player.moving = false;
+          const cb = player.target.cb; player.target = null;
+          if (cb) cb();
+        } else {
+          player.x += Math.sign(d) * dt * speed;
+          player.moving = true;
+        }
+      } else player.moving = false;
+    }
+    // física do pulo
+    player.vy += 2400 * dt;
+    player.y = Math.min(0, player.y + player.vy * dt * 0.28);
+    if (player.y >= 0) { player.y = 0; player.vy = 0; player.onGround = true; }
+    else player.onGround = false;
+
+    player.ft += dt;
+    if (player.moving && player.ft > 0.22) { player.frame = 1 - player.frame; player.ft = 0; }
+    const pe = $('player-el');
+    if (!horse.mounted) {
+      pe.style.display = 'block';
+      pe.style.left = player.x + '%';
+      pe.style.height = '26%';
+      pe.style.bottom = (10 + (-player.y) * 0.08) + '%';
+      pe.classList.toggle('flip', player.facing < 0);
+      pe.querySelector('img').style.filter = heroFilter();
+      const src = player.moving && player.frame === 1 ? ASSETS.hs_andando : ASSETS.hs_parado;
+      if ($('player-img').src !== src) $('player-img').src = src;
+    } else pe.style.display = 'none';
+
+    horseUpdate(dt);
+    const he = $('horse-el');
+    he.style.left = horse.x + '%';
+    he.style.height = '32%';
+    he.style.bottom = '8%';
+    he.classList.toggle('flip', horse.facing < 0);
+
+    const le = $('lumo-el');
+    le.style.left = (player.x + player.facing * 5.5) + '%';
+    le.style.bottom = (34 + (-player.y) * 0.08) + '%';
+    le.style.width = '6.5%';
+
+    updateProjectiles(dt);
+    updateSky();
+  }
+  requestAnimationFrame(loop);
+}
+
+/* ============ INPUT ============ */
+const keys = {};
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+  if (k === ' ' && !talking && $('world').classList.contains('hidden') === false) {
+    if (player.onGround && player.stamina > 8) { player.vy = -1050; player.onGround = false; player.stamina -= 8; }
+    return;
+  }
+  if (k === 'e' && !$('world').classList.contains('hidden')) {
+    let best = null, bd = 22;
+    document.querySelectorAll('#hotspots .hotspot').forEach(h => {
+      const x = parseFloat(h.style.left);
+      const d = Math.abs(x - player.x);
+      if (d < bd) { bd = d; best = h; }
+    });
+    if (best) best.click();
+  }
+  if (k === 'i' && !$('world').classList.contains('hidden')) $('inv-panel').classList.contains('hidden') ? openInv() : $('inv-panel').classList.add('hidden');
+  if (k === 'h' && !$('world').classList.contains('hidden')) toggleHorse();
+  if (k === 'escape') { endTalk(); $('inv-panel').classList.add('hidden'); }
+  if (k === 'enter') {
+    if (!$('cutscene').classList.contains('hidden')) csAdvance();
+    else if (talking) talkAdvance();
+  }
+  if (k === ' ' && talking) talkAdvance();
+  if (k === ' ' && !$('cutscene').classList.contains('hidden')) csAdvance();
+});
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+$('scene-wrap').addEventListener('click', e => {
+  if (talking) return;
+  if (e.target.closest('.hotspot') || e.target.closest('.exit-btn')) return;
+  const r = $('scene-wrap').getBoundingClientRect();
+  const px = ((e.clientX - r.left) / r.width) * 100;
+  walkTo(Math.max(3, Math.min(97, px)));
+});
+$('exit-left').addEventListener('click', e => { e.stopPropagation(); walkTo(8, () => goScene('left')); });
+$('exit-right').addEventListener('click', e => { e.stopPropagation(); walkTo(92, () => goScene('right')); });
+$('w-horse').addEventListener('click', toggleHorse);
+$('w-lumo').addEventListener('click', () => startTalk('lumo'));
+$('w-save').addEventListener('click', () => saveWorld(true));
+$('w-inv').addEventListener('click', openInv);
+$('w-menu').addEventListener('click', () => { saveWorld(false); showMenu(); });
+$('inv-close').addEventListener('click', () => $('inv-panel').classList.add('hidden'));
+$('inv-throw').addEventListener('click', throwSelected);
+
+/* ============ MENU / MUNDOS / CUSTOMIZAÇÃO ============ */
+function showScreen(id) {
+  ['menu','cutscene','world'].forEach(s => $(s).classList.toggle('hidden', s !== id));
+}
+function showMenu() { showScreen('menu'); renderSlots(); }
+function showWorld() {
+  showScreen('world');
+  const cv = $('sky-canvas');
+  cv.width = $('scene-wrap').clientWidth;
+  cv.height = $('scene-wrap').clientHeight;
+  $('hero-name-hud').textContent = heroLabel();
+  loadScene(sceneId);
+  toast('🌿 Bem-vindo a ANDORA, ' + heroLabel() + '! Espaço para pular · Shift corre · E interage');
+}
+function quickWorld() {
+  const list = worldsLoad();
+  const w = { id: 'w' + Date.now(), name: 'Vale de Andora', heroName: 'Ari', hue: 0, skin: 0,
+    sceneId: 'vila', dayT: 0.32, friends: {}, flags: [], inv: {}, quests: {}, played0: 0 };
+  list.push(w); worldsSave(list);
+  loadWorld(w);
+}
+function loadWorld(w) {
+  WORLD = JSON.parse(JSON.stringify(w));
+  sceneId = w.sceneId || 'vila';
+  dayT = w.dayT || 0.32;
+  FRIENDS = w.friends || {};
+  flags = new Set(w.flags || []);
+  INV = w.inv || {};
+  QUESTS = w.quests || {};
+  if (w.horse) { horse.hunger = w.horse.hunger; horse.thirst = w.horse.thirst; horse.energy = w.horse.energy; }
+  sessionStart = Date.now();
+  WORLD.played0 = w.played0 || 0;
+  $('hud-flags').textContent = '✦ descobertas: ' + flags.size;
+  try { localStorage.setItem('andora_last', w.id); } catch(e) {}
+}
+function renderSlots() {
+  const box = $('slots');
+  const list = worldsLoad();
+  box.innerHTML = list.length ? '' : '<div style="text-align:center;padding:14px;color:#5a7254">Nenhum mundo ainda — crie o primeiro!</div>';
+  list.forEach(w => {
+    const d = document.createElement('div');
+    d.className = 'slot';
+    const mins = Math.round(((w.played0 || 0) + (w.id === (WORLD && WORLD.id) ? Date.now() - sessionStart : 0)) / 60000);
+    d.innerHTML = '<div><b>' + w.name + '</b><br><span style="font-size:12px;opacity:.75">herói ' + (w.heroName || 'Ari') + ' · ' + (SCENE_MAP[w.sceneId || 'vila'].name) + ' · ' + mins + ' min</span></div>';
+    const play = document.createElement('button');
+    play.className = 'm-btn primary'; play.style.padding = '9px 16px'; play.textContent = '▶ jogar';
+    play.addEventListener('click', ev => { ev.stopPropagation(); loadWorld(w); showWorld(); });
+    const del = document.createElement('button');
+    del.className = 'del'; del.textContent = '🗑';
+    del.addEventListener('click', ev => {
+      ev.stopPropagation();
+      worldsSave(worldsLoad().filter(x => x.id !== w.id));
+      renderSlots();
+    });
+    d.appendChild(play); d.appendChild(del);
+    box.appendChild(d);
+  });
+}
+$('btn-continue').addEventListener('click', () => {
+  const list = worldsLoad();
+  let lastId = null;
+  try { lastId = localStorage.getItem('andora_last'); } catch(e) {}
+  const w = list.find(x => x.id === lastId) || list[list.length - 1];
+  if (w) { loadWorld(w); showWorld(); }
+  else $('btn-create').click();
+});
+$('btn-create').addEventListener('click', () => {
+  $('create-panel').classList.remove('hidden');
+  $('load-panel').classList.add('hidden');
+});
+$('btn-load').addEventListener('click', () => {
+  $('load-panel').classList.remove('hidden');
+  $('create-panel').classList.add('hidden');
+  renderSlots();
+});
+$('btn-cancel-create').addEventListener('click', () => $('create-panel').classList.add('hidden'));
+$('btn-cancel-load').addEventListener('click', () => $('load-panel').classList.add('hidden'));
+$('btn-cutscene').addEventListener('click', startCutscene);
+document.querySelectorAll('#create-panel .chip').forEach(c => {
+  c.addEventListener('click', () => {
+    document.querySelectorAll('#create-panel .chip').forEach(x => x.classList.remove('sel'));
+    c.classList.add('sel');
+    $('hero-name').value = c.dataset.name;
+  });
+});
+document.querySelectorAll('#create-panel .sw').forEach(s => {
+  s.addEventListener('click', () => {
+    const group = s.dataset.hue !== undefined ? '[data-hue]' : '[data-skin]';
+    document.querySelectorAll('#create-panel .sw' + group).forEach(x => x.classList.remove('sel'));
+    s.classList.add('sel');
+  });
+});
+$('btn-do-create').addEventListener('click', () => {
+  const hueEl = document.querySelector('#create-panel .sw[data-hue].sel');
+  const skinEl = document.querySelector('#create-panel .sw[data-skin].sel');
+  const w = {
+    id: 'w' + Date.now(),
+    name: $('world-name').value.trim() || 'Meu Vale',
+    heroName: $('hero-name').value.trim() || 'Ari',
+    hue: parseFloat(hueEl ? hueEl.dataset.hue : 0),
+    skin: parseFloat(skinEl ? skinEl.dataset.skin : 0),
+    sceneId: 'vila', dayT: 0.32, friends: {}, flags: [], inv: {}, quests: {}, played0: 0
+  };
+  const list = worldsLoad();
+  list.push(w); worldsSave(list);
+  loadWorld(w);
+  $('create-panel').classList.add('hidden');
+  if (!hasSeen()) startCutscene(); else showWorld();
+});
+$('cs-menu').addEventListener('click', () => { markSeen(); showMenu(); });
+$('cs-skip').addEventListener('click', () => {
+  markSeen();
+  while (CS_NODES[CS.node] && !CS_NODES[CS.node].end && !CS_NODES[CS.node].choice) {
+    const n = CS_NODES[CS.node];
+    n.flag && addFlag(n.flag);
+    if (n.goto) CS.node = n.goto; else break;
+  }
+  csRender();
+});
+$('cs-stage').addEventListener('click', csAdvance);
+
+/* galeria */
+(function(){
+  const g = $('gallery');
+  ['f1','sc_vila','f2','sc_floresta','f3','sc_lago','f4'].forEach(k => {
+    const img = document.createElement('img');
+    img.src = ASSETS[k]; img.alt = 'andora';
+    g.appendChild(img);
+  });
+})();
+
+/* init */
+requestAnimationFrame(loop);
+if (worldsLoad().length) $('btn-continue').classList.remove('hidden');
+if (!hasSeen() && !worldsLoad().length) startCutscene();
+window.addEventListener('resize', () => {
+  const cv = $('sky-canvas');
+  cv.width = $('scene-wrap').clientWidth;
+  cv.height = $('scene-wrap').clientHeight;
+});
+setInterval(() => { if (WORLD) saveWorld(false); }, 45000);
+</script>
+</body>
+</html>
