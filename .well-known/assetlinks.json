@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.andora.jogo",
+    "sha256_cert_fingerprints": ["B2:BB:41:5C:A1:02:CA:EF:12:C3:D3:68:C0:D2:C5:47:85:2E:9C:7A:B9:F0:53:F4:08:61:4F:42:27:89:A0:02"]
+  }
+}]
