@@ -103,7 +103,9 @@ let scene, camera, renderer, clock, skyDome;
 let sun, moon, hemi, stars, sunSprite, moonSprite, glowTex, lanternGlowMats = [], lanternCoreMats = [];
 let sunDir = new THREE.Vector3(0, 1, 0), cloudMatG = null, motePts = null, sunCore = null, leafPts = null, gradeEl = null;
 let windowMats = [];
+let reflRT = null, reflCam = null;
 const windU = { value: 0 };
+const _reflDir = new THREE.Vector3(), _reflLook = new THREE.Vector3(), _reflTexMat = new THREE.Matrix4();
 let frameCount = 0, frameAccum = 0, qualityLevel = 2;
 let terrain, water;
 let hero = null, horseList = [], npcList = [], animalList = [], pickupList = [], lanternList = [], clouds = [], birds = [];
@@ -413,6 +415,9 @@ function buildTerrain() {
     uSky: { value: new THREE.Color(0xa8d4ec) },
     uSunDir: { value: new THREE.Vector3(0, 1, 0) },
     uSunCol: { value: new THREE.Color(0xffe9c0) },
+    uRefl: { value: null },
+    uReflOn: { value: 0 },
+    uTexMat: { value: new THREE.Matrix4() },
     uCenter: { value: new THREE.Vector2(LAKE.x, LAKE.z) },
     uRadius: { value: LAKE.r + 6 },
     fogColor: { value: new THREE.Color(0xa8d4ec) },
@@ -421,15 +426,25 @@ function buildTerrain() {
   const wmat = new THREE.ShaderMaterial({
     uniforms: wu,
     transparent: true,
-    vertexShader: 'uniform float uTime;\nvarying vec3 vWp; varying vec3 vV; varying vec3 vN;\nvoid main(){\n vec4 wp = modelMatrix * vec4(position, 1.0);\n float w1 = sin(wp.x * 0.35 + uTime * 1.1) * cos(wp.z * 0.42 + uTime * 0.8);\n float w2 = sin(wp.x * 0.62 - uTime * 1.3) * sin(wp.z * 0.55 + uTime * 0.6);\n wp.y += w1 * 0.12 + w2 * 0.07;\n float dx = 0.35 * cos(wp.x * 0.35 + uTime * 1.1) * cos(wp.z * 0.42 + uTime * 0.8) * 0.12 + 0.62 * cos(wp.x * 0.62 - uTime * 1.3) * sin(wp.z * 0.55 + uTime * 0.6) * 0.07;\n float dz = -0.42 * sin(wp.x * 0.35 + uTime * 1.1) * sin(wp.z * 0.42 + uTime * 0.8) * 0.12 + 0.55 * sin(wp.x * 0.62 - uTime * 1.3) * cos(wp.z * 0.55 + uTime * 0.6) * 0.07;\n vN = normalize(vec3(-dx * 3.5, 1.0, -dz * 3.5));\n vWp = wp.xyz;\n vec4 mv = viewMatrix * wp;\n vV = -mv.xyz;\n gl_Position = projectionMatrix * mv;\n}',
-    fragmentShader: 'uniform float uTime;\nuniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uSunDir; uniform vec3 uSunCol;\nuniform vec2 uCenter; uniform float uRadius;\nuniform vec3 fogColor; uniform float fogDensity;\nvarying vec3 vWp; varying vec3 vV; varying vec3 vN;\nvoid main(){\n vec3 N = normalize(vN); vec3 V = normalize(vV);\n float fres = pow(1.0 - max(dot(N, V), 0.0), 1.6);\n float ripple = N.x * 0.5 + N.z * 0.45;\n vec3 col = mix(uDeep, uShallow, clamp(0.3 + ripple * 1.4, 0.0, 1.0));\n col = mix(col, uSky, clamp(fres * 0.9 + ripple * 0.3 + 0.12, 0.0, 0.88));\n vec3 L = normalize(uSunDir);\n vec3 H = normalize(L + V);\n vec3 Lp = normalize(vec3(L.x, max(L.y, 0.02) * 0.22, L.z));\n vec3 H2 = normalize(Lp + V);\n float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.8;\n float path = pow(max(dot(N, H2), 0.0), 70.0) * 1.5;\n col += uSunCol * (spec + path);\n float glint = pow(max(dot(reflect(-L, N), V), 0.0), 24.0);\n col += uSunCol * glint * 0.18;\n float sparkle = pow(max(dot(N, H), 0.0), 320.0) * 1.6;\n col += uSunCol * sparkle;\n float d = length(vWp.xz - uCenter);\n float foam = smoothstep(uRadius - 10.0, uRadius - 0.5, d);\n foam *= 0.55 + 0.45 * sin(d * 1.4 - uTime * 1.6 + sin(vWp.x * 0.3 + uTime));\n col = mix(col, vec3(0.93, 0.97, 1.0), clamp(foam, 0.0, 0.7) * 0.7);\n float fd = length(vV);\n float fogF = 1.0 - exp(-fogDensity * fogDensity * fd * fd);\n col = mix(col, fogColor, fogF);\n gl_FragColor = vec4(col, 0.955);\n}'
+    vertexShader: 'uniform float uTime;\nuniform mat4 uTexMat;\nvarying vec3 vWp; varying vec3 vV; varying vec3 vN; varying vec4 vRefC;\nvoid main(){\n vec4 wp = modelMatrix * vec4(position, 1.0);\n vRefC = uTexMat * vec4(wp.xyz, 1.0);\n float w1 = sin(wp.x * 0.35 + uTime * 1.1) * cos(wp.z * 0.42 + uTime * 0.8);\n float w2 = sin(wp.x * 0.62 - uTime * 1.3) * sin(wp.z * 0.55 + uTime * 0.6);\n wp.y += w1 * 0.12 + w2 * 0.07;\n float dx = 0.35 * cos(wp.x * 0.35 + uTime * 1.1) * cos(wp.z * 0.42 + uTime * 0.8) * 0.12 + 0.62 * cos(wp.x * 0.62 - uTime * 1.3) * sin(wp.z * 0.55 + uTime * 0.6) * 0.07;\n float dz = -0.42 * sin(wp.x * 0.35 + uTime * 1.1) * sin(wp.z * 0.42 + uTime * 0.8) * 0.12 + 0.55 * sin(wp.x * 0.62 - uTime * 1.3) * cos(wp.z * 0.55 + uTime * 0.6) * 0.07;\n vN = normalize(vec3(-dx * 3.5, 1.0, -dz * 3.5));\n vWp = wp.xyz;\n vec4 mv = viewMatrix * wp;\n vV = -mv.xyz;\n gl_Position = projectionMatrix * mv;\n}',
+    fragmentShader: 'uniform float uTime;\nuniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uSunDir; uniform vec3 uSunCol;\nuniform vec2 uCenter; uniform float uRadius;\nuniform vec3 fogColor; uniform float fogDensity;\nuniform sampler2D uRefl; uniform float uReflOn;\nvarying vec3 vWp; varying vec3 vV; varying vec3 vN; varying vec4 vRefC;\nvoid main(){\n vec3 N = normalize(vN); vec3 V = normalize(vV);\n float fres = pow(1.0 - max(dot(N, V), 0.0), 1.6);\n float ripple = N.x * 0.5 + N.z * 0.45;\n vec3 col = mix(uDeep, uShallow, clamp(0.3 + ripple * 1.4, 0.0, 1.0));\n vec3 reflC = uSky;\n if (uReflOn > 0.5) {\n  vec2 ruv = vRefC.xy / max(vRefC.w, 0.001);\n  reflC = texture2D(uRefl, clamp(ruv, 0.001, 0.999)).rgb;\n }\n col = mix(col, reflC, clamp(fres * 0.85 + ripple * 0.22 + 0.2, 0.0, 0.85));\n vec3 L = normalize(uSunDir);\n vec3 H = normalize(L + V);\n vec3 Lp = normalize(vec3(L.x, max(L.y, 0.02) * 0.22, L.z));\n vec3 H2 = normalize(Lp + V);\n float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.8;\n float path = pow(max(dot(N, H2), 0.0), 70.0) * 1.5;\n col += uSunCol * (spec + path);\n float glint = pow(max(dot(reflect(-L, N), V), 0.0), 24.0);\n col += uSunCol * glint * 0.18;\n float sparkle = pow(max(dot(N, H), 0.0), 320.0) * 1.6;\n col += uSunCol * sparkle;\n float d = length(vWp.xz - uCenter);\n float foam = smoothstep(uRadius - 10.0, uRadius - 0.5, d);\n foam *= 0.55 + 0.45 * sin(d * 1.4 - uTime * 1.6 + sin(vWp.x * 0.3 + uTime));\n col = mix(col, vec3(0.93, 0.97, 1.0), clamp(foam, 0.0, 0.7) * 0.7);\n float fd = length(vV);\n float fogF = 1.0 - exp(-fogDensity * fogDensity * fd * fd);\n col = mix(col, fogColor, fogF);\n gl_FragColor = vec4(col, 0.955);\n}'
   });
+  const rSz = IS_TOUCH ? 256 : 512;
+  reflRT = new THREE.WebGLRenderTarget(rSz, rSz);
+  wu.uRefl.value = reflRT.texture;
+  reflCam = new THREE.PerspectiveCamera(55, 1, 0.5, 1200);
   water = new THREE.Mesh(wgeo, wmat);
   water.position.set(LAKE.x, WATER_Y, LAKE.z);
   scene.add(water);
   animatables.push(t => {
     wu.uTime.value = t;
-    wu.uSunDir.value.copy(sunDir);
+    if (sunDir.y > 0.02) {
+      wu.uSunDir.value.copy(sunDir);
+      wu.uSunCol.value.copy(sun.color);
+    } else {
+      wu.uSunDir.value.set(-sunDir.x, -sunDir.y, -sunDir.z);
+      wu.uSunCol.value.setRGB(0.55, 0.66, 0.95);
+    }
     if (skyDome) wu.uSky.value.copy(skyDome.material.uniforms.bottomColor.value);
     if (scene.fog) wu.fogColor.value.copy(scene.fog.color);
     water.position.y = WATER_Y + Math.sin(t * 0.7) * 0.07;
@@ -1411,26 +1426,137 @@ function renderSlots() {
   }
 }
 
-/* ---------------- cutscene ---------------- */
+/* ---------------- cutscene cinematográfica (vídeo em tempo real) ---------------- */
+let cutActive = false;
+const cutFrom = new THREE.Vector3(), cutTo = new THREE.Vector3(), cutLookA = new THREE.Vector3(), cutLookB = new THREE.Vector3(), _cutLook = new THREE.Vector3();
 const CS = {
-  idx: 0, a: 0, b: 0, c: 0, after: null,
+  idx: 0, a: 0, b: 0, c: 0, after: null, t0: 0, imgTimer: null, prevHour: 9,
   nodes: [
-    { img: 'f1', who: 'Narrador', text: 'Depois de muitos dias de caminho, você cruza a última colina — e o Vale de Andora se abre sob o sol. Dizem que, ao anoitecer, lanternas de luz dançam sobre o lago... e que o vale escolhe quem pode vê-las.', opts: [['Caminhar em silêncio, admirando o vale.', 'a'], ['Perguntar a um transeunte sobre as lanternas.', 'b'], ['Compartilhar pão com quem encontrar no caminho.', 'c']] },
-    { img: 'f2', who: 'Voz do vento', text: 'A ponte de madeira range sob seus pés. Em algum lugar, um sino toca uma vez. Você percebe que não está andando sozinho — algo brilha entre as árvores, sempre a alguns passos de distância.', opts: [['Seguir a luz com calma.', 'a'], ['Observar de longe, tentando entender.', 'b'], ['Deixar um pedaço de fruta como oferenda.', 'c']] },
-    { img: 'f3', who: 'Moira 🧶', text: 'Na vila, Moira sorri ao te ver chegar. "Então é você quem todos esperavam! Sente-se. O vale não tem pressa — e quem tem pressa nunca vê as lanternas."', opts: [['Sentar e ouvir suas histórias.', 'a'], ['Perguntar sobre Vesper, a guardiã do lago.', 'b'], ['Ajudar a cortar a torta recém-saída do forno.', 'c']] },
-    { img: 'f4', who: 'Vesper 🌙', text: 'À beira do lago, Vesper acende uma lanterna sem cera. "As lanternas de Andora são memórias felizes feitas luz. O vale te escolheu para cuidar delas... ou para descansar entre elas. Você decide."', opts: [['Cuidar das lanternas, sem pressa.', 'a'], ['Descobrir os segredos das luzes.', 'b'], ['Cuidar das pessoas primeiro, sempre.', 'c']] },
-    { finale: true, who: 'Fim da introdução' }
+    {
+      img: 'f1', hour: 8, who: 'Narrador',
+      text: 'Depois de muitos dias de caminho, você cruza a última colina — e o Vale de Andora se abre sob o sol. Dizem que, ao anoitecer, lanternas de luz dançam sobre o lago... e que o vale escolhe quem pode vê-las.',
+      opts: [['Caminhar em silêncio, admirando o vale.', 'a'], ['Perguntar a um transeunte sobre as lanternas.', 'b'], ['Compartilhar pão com quem encontrar no caminho.', 'c']],
+      shot: {
+        from: [34, 18, 240], to: [12, 10, 216], look: [0, 7, 150], lookTo: [0, 5, 162], fov: 52, dur: 15,
+        hero: { x: 3, z: 216, toX: 3, toZ: 200, yaw: Math.PI, walk: true }
+      }
+    },
+    {
+      img: 'f2', hour: 10, who: 'Voz do vento',
+      text: 'A ponte de madeira range sob seus pés. Em algum lugar, um sino toca uma vez. Você percebe que não está andando sozinho — algo brilha entre as árvores, sempre a alguns passos de distância.',
+      opts: [['Seguir a luz com calma.', 'a'], ['Observar de longe, tentando entender.', 'b'], ['Deixar um pedaço de fruta como oferenda.', 'c']],
+      shot: {
+        from: [130, 10, -12], to: [165, 6, -26], look: [215, 3, -22], lookTo: [208, 3, -26], fov: 46, dur: 14,
+        hero: { x: 172, z: -30, toX: 192, toZ: -24, yaw: 1.28, walk: true }
+      }
+    },
+    {
+      img: 'f3', hour: 12, who: 'Moira 🧶',
+      text: 'Na vila, Moira sorri ao te ver chegar. "Então é você quem todos esperavam! Sente-se. O vale não tem pressa — e quem tem pressa nunca vê as lanternas."',
+      opts: [['Sentar e ouvir suas histórias.', 'a'], ['Perguntar sobre Vesper, a guardiã do lago.', 'b'], ['Ajudar a cortar a torta recém-saída do forno.', 'c']],
+      shot: {
+        from: [26, 9, 152], to: [-12, 7, 150], look: [4, 3, 124], lookTo: [2, 3, 122], fov: 46, dur: 14,
+        hero: { x: 6, z: 131, yaw: 2.94, walk: false }
+      }
+    },
+    {
+      img: 'f4', hour: 18.35, who: 'Vesper 🌙',
+      text: 'À beira do lago, Vesper acende uma lanterna sem cera. "As lanternas de Andora são memórias felizes feitas luz. O vale te escolheu para cuidar delas... ou para descansar entre elas. Você decide."',
+      opts: [['Cuidar das lanternas, sem pressa.', 'a'], ['Descobrir os segredos das luzes.', 'b'], ['Cuidar das pessoas primeiro, sempre.', 'c']],
+      shot: {
+        from: [-92, 6, -8], to: [-100, 4, -14], look: [-180, 2, -120], lookTo: [-215, 1, -165], fov: 44, dur: 15,
+        hero: { x: -106, z: -23, yaw: -2.51, walk: false }
+      }
+    },
+    { finale: true, hour: 20.4, who: 'Fim da introdução',
+      shot: {
+        from: [-96, 3.2, -14], to: [-100, 2.9, -17], look: [-106, 2.2, -23], lookTo: [-106, 2.3, -23], fov: 42, dur: 16,
+        hero: { x: -106, z: -23, yaw: 0.79, walk: false }
+      }
+    }
   ]
 };
+function placeCutHero(sh) {
+  if (!hero || !sh || !sh.hero) return;
+  const h = sh.hero;
+  hero.swimming = false; hero.mounted = false;
+  hero.x = h.x; hero.z = h.z;
+  hero.yaw = h.yaw;
+  hero.g.position.set(h.x, height(h.x, h.z), h.z);
+  hero.g.rotation.set(0, h.yaw, 0);
+}
+function cutCamTick(dt) {
+  dt = Math.min(dt, 0.05);
+  // fade + ken burns por relógio real (CSS transitions podem travar; dt varia com FPS)
+  const nowMs = performance.now();
+  if (CS.fadeDir) {
+    CS.fadeT = clamp((CS.fadeDir > 0 ? (nowMs - CS.fadeT0) : 1150 - (nowMs - CS.fadeT0)) / 1150, 0, 1);
+    const w0 = $('csImgWrap'); if (w0) w0.style.opacity = String(CS.fadeT);
+    if ((CS.fadeDir > 0 && CS.fadeT >= 1) || (CS.fadeDir < 0 && CS.fadeT <= 0)) CS.fadeDir = 0;
+  }
+  const cim = $('csImg');
+  if (cim) {
+    const kenP = clamp((nowMs - (CS.kenT0 || nowMs)) / 15000, 0, 1);
+    cim.style.transform = 'scale(' + (1.02 + 0.10 * kenP) + ')';
+  }
+  const n = CS.nodes[CS.idx];
+  const sh = n && n.shot;
+  if (!sh) return;
+  const u = clamp((worldTime - CS.t0) / sh.dur, 0, 1);
+  const e = u * u * (3 - 2 * u);
+  camera.position.lerpVectors(cutFrom, cutTo, e);
+  if (Math.abs(camera.fov - sh.fov) > 0.05) {
+    camera.fov += (sh.fov - camera.fov) * Math.min(1, dt * 2.2);
+    camera.updateProjectionMatrix();
+  }
+  _cutLook.lerpVectors(cutLookA, cutLookB, e);
+  camera.lookAt(_cutLook);
+  const hh = sh.hero;
+  if (hh && hero) {
+    const hu = clamp((worldTime - CS.t0) / sh.dur, 0, 1);
+    if (hh.walk && hh.toX !== undefined) {
+      hero.x = lerp(hh.x, hh.toX, hu);
+      hero.z = lerp(hh.z, hh.toZ, hu);
+    }
+    hero.g.position.set(hero.x, height(hero.x, hero.z), hero.z);
+    hero.g.rotation.set(0, hh.yaw, 0);
+    hero.yaw = hh.yaw;
+    if (hh.walk) {
+      hero.animT += dt * 4.2;
+      const sw = Math.sin(hero.animT * 2.1);
+      hero.legL.rotation.x = sw * 0.62; hero.legR.rotation.x = -sw * 0.62;
+      hero.armL.rotation.x = -sw * 0.5; hero.armR.rotation.x = sw * 0.5;
+    } else {
+      hero.legL.rotation.x = hero.legR.rotation.x = 0;
+      hero.armL.rotation.x = hero.armR.rotation.x = 0;
+      hero.armL.rotation.z = 0.1; hero.armR.rotation.z = -0.1;
+    }
+    if (hero.cloak) hero.cloak.rotation.x = 0.05 + Math.sin(worldTime * 1.6) * 0.07;
+  }
+}
 function playCutscene(after) {
   CS.idx = 0; CS.a = CS.b = CS.c = 0; CS.after = after || null;
+  CS.prevHour = hour;
+  cutActive = true;
   $('menu').classList.add('hidden');
   $('cutscene').classList.remove('hidden');
+  const mm = $('minimapWrap'); if (mm) mm.classList.add('hidden');
+  const hd = $('hud'); if (hd) hd.classList.add('hidden');
   showCSNode();
 }
 function endCutscene() {
+  cutActive = false;
+  if (CS.imgTimer) { clearTimeout(CS.imgTimer); CS.imgTimer = null; }
+  const wrap = $('csImgWrap'); if (wrap) { wrap.classList.remove('show'); wrap.style.opacity = '0'; }
+  CS.fadeDir = 0; CS.fadeT = 0;
   $('cutscene').classList.add('hidden');
+  if (gameStarted) {
+    const mm = $('minimapWrap'); if (mm) mm.classList.remove('hidden');
+    const hd = $('hud'); if (hd) hd.classList.remove('hidden');
+  }
   store.set('andora3d_intro_v1', 1);
+  if (gameStarted) hour = CS.prevHour;
+  camera.fov = 62; camera.updateProjectionMatrix();
   const fn = CS.after; CS.after = null;
   if (fn) fn();
   else if (!gameStarted) $('menu').classList.remove('hidden');
@@ -1438,8 +1564,35 @@ function endCutscene() {
 function showCSNode() {
   const n = CS.nodes[CS.idx];
   if (!n) { endCutscene(); return; }
-  const img = $('csImg');
-  if (n.img && ASSETS[n.img]) { img.src = ASSETS[n.img]; img.classList.remove('hidden'); }
+  // direção de câmera do plano atual
+  const sh = n.shot;
+  if (sh) {
+    CS.t0 = worldTime;
+    cutFrom.fromArray(sh.from); cutTo.fromArray(sh.to);
+    cutLookA.fromArray(sh.look); cutLookB.fromArray(sh.lookTo);
+    camera.position.copy(cutFrom);
+    camera.fov = sh.fov; camera.updateProjectionMatrix();
+    camera.lookAt(cutLookA);
+    hour = n.hour !== undefined ? n.hour : hour;
+    placeCutHero(sh);
+  }
+  // quadro pintado em transição (Ken Burns) e depois a cena viva
+  const wrap = $('csImgWrap'), img = $('csImg');
+  if (CS.imgTimer) { clearTimeout(CS.imgTimer); CS.imgTimer = null; }
+  if (n.img && ASSETS[n.img] && wrap) {
+    img.src = ASSETS[n.img];
+    try { wrap.getAnimations().forEach(a => a.cancel()); img.getAnimations().forEach(a => a.cancel()); } catch (e) {}
+    wrap.classList.add('show');
+    wrap.style.opacity = '0';
+    CS.fadeT = 0; CS.fadeDir = 1; CS.fadeT0 = performance.now();
+    CS.kenT0 = performance.now();
+    img.style.transform = 'scale(1.02)';
+    CS.imgTimer = setTimeout(() => { CS.fadeDir = -1; CS.fadeT0 = performance.now(); wrap.classList.remove('show'); CS.imgTimer = null; }, 3800);
+  } else if (wrap) {
+    wrap.classList.remove('show');
+    wrap.style.opacity = '0';
+    CS.fadeDir = 0; CS.fadeT = 0;
+  }
   if (n.finale) {
     const total = CS.a + CS.b + CS.c || 1;
     let title, text;
@@ -1811,6 +1964,7 @@ function updateHero(dt) {
 
 /* ---------------- câmera ---------------- */
 function updateCamera(dt) {
+  if (cutActive) { cutCamTick(dt); return; }
   if (!gameStarted) {
     // órbita cinematográfica da vila no menu
     const a = worldTime * 0.07;
@@ -1844,11 +1998,13 @@ function animate() {
     if (fps < 26 && qualityLevel > 0) {
       qualityLevel--;
       if (qualityLevel === 1) {
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.1));
-        if (sun) sun.castShadow = false;
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.15));
         if (motePts) motePts.visible = false;
+        if (leafPts) leafPts.visible = false;
+        if (water && water.material.uniforms.uReflOn) water.material.uniforms.uReflOn.value = 0;
       } else {
         renderer.setPixelRatio(1);
+        if (sun) sun.castShadow = false;
         if (cloudMatG) cloudMatG.opacity = 0.5;
       }
     }
@@ -1857,7 +2013,39 @@ function animate() {
   if (gameStarted && !menuMode && !dlgNpc) updateHero(dt);
   if (hero) updateCamera(dt);
   windU.value = worldTime;
-  if (hero && camera) {
+  if (hero && hero.cloak) hero.cloak.rotation.x = 0.05 + Math.sin(worldTime * 1.6) * 0.07;
+  // reflexo espelhado do cenario na agua (so perto do lago; some se o FPS cair)
+  if (reflRT && reflCam && camera && water && renderer.setRenderTarget) {
+    const nearLake = hero ? distTo(hero.x, hero.z, LAKE.x, LAKE.z) < LAKE.r + 170 : false;
+    if (nearLake && qualityLevel >= 1) {
+      reflCam.position.copy(camera.position);
+      reflCam.position.y = 2 * WATER_Y - camera.position.y;
+      camera.getWorldDirection(_reflDir);
+      _reflLook.copy(camera.position).add(_reflDir);
+      _reflLook.y = 2 * WATER_Y - _reflLook.y;
+      reflCam.up.set(0, 1, 0);
+      reflCam.lookAt(_reflLook);
+      reflCam.fov = camera.fov; reflCam.aspect = camera.aspect;
+      reflCam.updateProjectionMatrix();
+      reflCam.updateMatrixWorld(true);
+      reflCam.matrixWorldInverse.copy(reflCam.matrixWorld).invert();
+      _reflTexMat.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+      _reflTexMat.multiply(reflCam.projectionMatrix);
+      _reflTexMat.multiply(reflCam.matrixWorldInverse);
+      water.material.uniforms.uTexMat.value.copy(_reflTexMat);
+      water.material.uniforms.uReflOn.value = 1;
+      water.visible = false;
+      const shd = renderer.shadowMap.enabled; renderer.shadowMap.enabled = false;
+      renderer.setRenderTarget(reflRT);
+      renderer.render(scene, reflCam);
+      renderer.setRenderTarget(null);
+      renderer.shadowMap.enabled = shd;
+      water.visible = true;
+    } else {
+      water.material.uniforms.uReflOn.value = 0;
+    }
+  }
+  if (hero && camera && !cutActive) {
     const tf = hero.speed >= 18 ? 74 : (hero.speed > 10 ? 68.5 : 62);
     if (Math.abs(camera.fov - tf) > 0.04) { camera.fov += (tf - camera.fov) * (1 - Math.exp(-3.2 * dt)); camera.updateProjectionMatrix(); }
   }
