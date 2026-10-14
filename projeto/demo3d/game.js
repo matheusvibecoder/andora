@@ -1433,49 +1433,216 @@ const CS = {
   idx: 0, a: 0, b: 0, c: 0, after: null, t0: 0, imgTimer: null, prevHour: 9,
   nodes: [
     {
-      img: 'f1', hour: 8, who: 'Narrador',
+      img: 'f1', clip: 'cut-0.mp4', hour: 8, who: 'Narrador',
       text: 'Depois de muitos dias de caminho, você cruza a última colina — e o Vale de Andora se abre sob o sol. Dizem que, ao anoitecer, lanternas de luz dançam sobre o lago... e que o vale escolhe quem pode vê-las.',
       opts: [['Caminhar em silêncio, admirando o vale.', 'a'], ['Perguntar a um transeunte sobre as lanternas.', 'b'], ['Compartilhar pão com quem encontrar no caminho.', 'c']],
       shot: {
-        from: [34, 18, 240], to: [12, 10, 216], look: [0, 7, 150], lookTo: [0, 5, 162], fov: 52, dur: 15,
+        from: [34, 18, 240], to: [12, 10, 216], look: [0, 7, 150], lookTo: [0, 5, 162], fov: 52, dur: 14.1333,
         hero: { x: 3, z: 216, toX: 3, toZ: 200, yaw: Math.PI, walk: true }
       }
     },
     {
-      img: 'f2', hour: 10, who: 'Voz do vento',
+      img: 'f2', clip: 'cut-1.mp4', hour: 10, who: 'Voz do vento',
       text: 'A ponte de madeira range sob seus pés. Em algum lugar, um sino toca uma vez. Você percebe que não está andando sozinho — algo brilha entre as árvores, sempre a alguns passos de distância.',
       opts: [['Seguir a luz com calma.', 'a'], ['Observar de longe, tentando entender.', 'b'], ['Deixar um pedaço de fruta como oferenda.', 'c']],
       shot: {
-        from: [130, 10, -12], to: [165, 6, -26], look: [215, 3, -22], lookTo: [208, 3, -26], fov: 46, dur: 14,
+        from: [130, 10, -12], to: [165, 6, -26], look: [215, 3, -22], lookTo: [208, 3, -26], fov: 46, dur: 13.1333,
         hero: { x: 172, z: -30, toX: 192, toZ: -24, yaw: 1.28, walk: true }
       }
     },
     {
-      img: 'f3', hour: 12, who: 'Moira 🧶',
+      img: 'f3', clip: 'cut-2.mp4', hour: 12, who: 'Moira 🧶',
       text: 'Na vila, Moira sorri ao te ver chegar. "Então é você quem todos esperavam! Sente-se. O vale não tem pressa — e quem tem pressa nunca vê as lanternas."',
       opts: [['Sentar e ouvir suas histórias.', 'a'], ['Perguntar sobre Vesper, a guardiã do lago.', 'b'], ['Ajudar a cortar a torta recém-saída do forno.', 'c']],
       shot: {
-        from: [26, 9, 152], to: [-12, 7, 150], look: [4, 3, 124], lookTo: [2, 3, 122], fov: 46, dur: 14,
+        from: [26, 9, 152], to: [-12, 7, 150], look: [4, 3, 124], lookTo: [2, 3, 122], fov: 46, dur: 10.6,
         hero: { x: 6, z: 131, yaw: 2.94, walk: false }
       }
     },
     {
-      img: 'f4', hour: 18.35, who: 'Vesper 🌙',
+      img: 'f4', clip: 'cut-3.mp4', hour: 18.35, who: 'Vesper 🌙',
       text: 'À beira do lago, Vesper acende uma lanterna sem cera. "As lanternas de Andora são memórias felizes feitas luz. O vale te escolheu para cuidar delas... ou para descansar entre elas. Você decide."',
       opts: [['Cuidar das lanternas, sem pressa.', 'a'], ['Descobrir os segredos das luzes.', 'b'], ['Cuidar das pessoas primeiro, sempre.', 'c']],
       shot: {
-        from: [-92, 6, -8], to: [-100, 4, -14], look: [-180, 2, -120], lookTo: [-215, 1, -165], fov: 44, dur: 15,
+        from: [-92, 6, -8], to: [-100, 4, -14], look: [-180, 2, -120], lookTo: [-215, 1, -165], fov: 44, dur: 13.4667,
         hero: { x: -106, z: -23, yaw: -2.51, walk: false }
       }
     },
-    { finale: true, hour: 20.4, who: 'Fim da introdução',
+    { finale: true, clip: 'cut-4.mp4', hour: 20.4, who: 'Fim da introdução',
       shot: {
-        from: [-96, 3.2, -14], to: [-100, 2.9, -17], look: [-106, 2.2, -23], lookTo: [-106, 2.3, -23], fov: 42, dur: 16,
+        from: [-96, 3.2, -14], to: [-100, 2.9, -17], look: [-106, 2.2, -23], lookTo: [-106, 2.3, -23], fov: 42, dur: 11.5333,
         hero: { x: -106, z: -23, yaw: 0.79, walk: false }
       }
     }
   ]
 };
+/* ---------------- captura deterministica do filme da cutscene ---------------- */
+window.__capFilm = {
+  prep(i, dur) {
+    window.__andoraCapture = true;
+    const n = CS.nodes[i];
+    CS.idx = i;
+    n.shot.dur = dur;
+    CS.t0 = 0;
+    if (n.hour !== undefined) hour = n.hour;
+    const sh = n.shot;
+    cutFrom.fromArray(sh.from); cutTo.fromArray(sh.to);
+    cutLookA.fromArray(sh.look); cutLookB.fromArray(sh.lookTo);
+    camera.position.copy(cutFrom);
+    camera.fov = sh.fov; camera.updateProjectionMatrix();
+    camera.lookAt(cutLookA);
+    placeCutHero(sh);
+    updateSky();
+    if (renderer.shadowMap) { renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true; }
+    document.querySelectorAll('body > *').forEach(el => {
+      if (el.tagName === 'CANVAS' || el.tagName === 'SCRIPT') return;
+      el.style.display = 'none';
+    });
+  },
+  seek(t) {
+    worldTime = t;
+    if (hero) hero.animT = t * 4.2;
+    cutCamTick(0);
+    windU.value = worldTime;
+    if (hero && hero.cloak) hero.cloak.rotation.x = 0.05 + Math.sin(worldTime * 1.6) * 0.07;
+    // mesmo reflexo espelhado do animate (necessario nas cenas com agua)
+    if (reflRT && reflCam && camera && water && renderer.setRenderTarget) {
+      const nearLake = hero ? distTo(hero.x, hero.z, LAKE.x, LAKE.z) < LAKE.r + 170 : false;
+      if (nearLake && qualityLevel >= 1) {
+        reflCam.position.copy(camera.position);
+        reflCam.position.y = 2 * WATER_Y - camera.position.y;
+        camera.getWorldDirection(_reflDir);
+        _reflLook.copy(camera.position).add(_reflDir);
+        _reflLook.y = 2 * WATER_Y - _reflLook.y;
+        reflCam.up.set(0, 1, 0);
+        reflCam.lookAt(_reflLook);
+        reflCam.fov = camera.fov; reflCam.aspect = camera.aspect;
+        reflCam.updateProjectionMatrix();
+        reflCam.updateMatrixWorld(true);
+        reflCam.matrixWorldInverse.copy(reflCam.matrixWorld).invert();
+        _reflTexMat.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+        _reflTexMat.multiply(reflCam.projectionMatrix);
+        _reflTexMat.multiply(reflCam.matrixWorldInverse);
+        water.material.uniforms.uTexMat.value.copy(_reflTexMat);
+        water.material.uniforms.uReflOn.value = 1;
+        water.visible = false;
+        const shd = renderer.shadowMap.enabled; renderer.shadowMap.enabled = false;
+        renderer.setRenderTarget(reflRT);
+        renderer.render(scene, reflCam);
+        renderer.setRenderTarget(null);
+        renderer.shadowMap.enabled = shd;
+        water.visible = true;
+      } else {
+        water.material.uniforms.uReflOn.value = 0;
+      }
+    }
+    updateSky();
+    for (const fn of animatables) fn(t, 1 / 15);
+    for (const b of birds) {
+      b.a += b.spd / 15;
+      b.g.position.set(b.cx + Math.cos(b.a) * b.r, b.y + Math.sin(b.a * 2) * 3, b.cz + Math.sin(b.a) * b.r);
+      b.g.rotation.y = -b.a + Math.PI / 2;
+      const flap = Math.sin(t * 7 + b.a * 3) * 0.7;
+      b.wl.rotation.z = flap; b.wr.rotation.z = -flap;
+    }
+    for (const c of clouds) {
+      c.position.x += 1.6 / 15;
+      if (c.position.x > 420) c.position.x = -420;
+    }
+    for (const n of npcList) { n.animT += 1 / 15; if (!n.ambient) n.g.rotation.y = Math.sin(n.animT * 0.4) * 0.3; }
+    renderer.render(scene, camera);
+  }
+};
+
+/* ---------------- ambiencia procedural (Web Audio): vento, passaros, agua, grilos ---------------- */
+const Amb = { ctx: null, on: false, master: null, windGain: null, waterGain: null, birdT: 2, cricketT: 1 };
+function ambInit() {
+  if (Amb.ctx) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    Amb.ctx = ctx;
+    const master = ctx.createGain();
+    master.gain.value = 0.0001;
+    master.connect(ctx.destination);
+    Amb.master = master;
+    const len = ctx.sampleRate * 2;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+    const ws = ctx.createBufferSource(); ws.buffer = buf; ws.loop = true;
+    const wf = ctx.createBiquadFilter(); wf.type = 'lowpass'; wf.frequency.value = 420;
+    const wg = ctx.createGain(); wg.gain.value = 0.1;
+    ws.connect(wf); wf.connect(wg); wg.connect(master); ws.start();
+    Amb.windGain = wg;
+    const as2 = ctx.createBufferSource(); as2.buffer = buf; as2.loop = true;
+    const af = ctx.createBiquadFilter(); af.type = 'bandpass'; af.frequency.value = 900; af.Q.value = 0.7;
+    const ag = ctx.createGain(); ag.gain.value = 0;
+    as2.connect(af); af.connect(ag); ag.connect(master); as2.start();
+    Amb.waterGain = ag;
+    master.gain.setTargetAtTime(0.32, ctx.currentTime, 1.4);
+    Amb.on = true;
+    if (ctx.state === 'suspended') ctx.resume();
+  } catch (e) {}
+}
+function ambChirp() {
+  const ctx = Amb.ctx; if (!ctx) return;
+  try {
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    const g = ctx.createGain();
+    const f0 = 2200 + Math.random() * 1800;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * (1.2 + Math.random() * 0.5), t + 0.06);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.85, t + 0.13);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.045 + Math.random() * 0.05, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+    o.connect(g); g.connect(Amb.master);
+    o.start(t); o.stop(t + 0.22);
+    if (Math.random() < 0.45) setTimeout(ambChirp, 150 + Math.random() * 130);
+  } catch (e) {}
+}
+function ambCricket() {
+  const ctx = Amb.ctx; if (!ctx) return;
+  try {
+    const t = ctx.currentTime;
+    for (let k = 0; k < 3; k++) {
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 4200 + Math.random() * 600;
+      const g = ctx.createGain();
+      const t0 = t + k * 0.07;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.018, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.05);
+      o.connect(g); g.connect(Amb.master); o.start(t0); o.stop(t0 + 0.06);
+    }
+  } catch (e) {}
+}
+function ambTick(dt) {
+  if (!Amb.on || !Amb.ctx) return;
+  const night = hour >= 19.4 || hour < 5.6;
+  if (Amb.windGain) {
+    const target = 0.09 + 0.06 * (0.5 + 0.5 * Math.sin(worldTime * 0.13));
+    Amb.windGain.gain.value += (target - Amb.windGain.gain.value) * Math.min(1, dt * 1.5);
+  }
+  if (Amb.waterGain && hero) {
+    const dx = hero.x + 200, dz = hero.z + 150;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    const near = Math.max(0, Math.min(1, 1 - (dist - 70) / 120));
+    Amb.waterGain.gain.value += (near * 0.13 - Amb.waterGain.gain.value) * Math.min(1, dt * 2);
+  }
+  Amb.birdT -= dt;
+  if (!night && Amb.birdT <= 0) { Amb.birdT = 1.6 + Math.random() * 4.2; ambChirp(); }
+  Amb.cricketT -= dt;
+  if (night && Amb.cricketT <= 0) { Amb.cricketT = 0.9 + Math.random() * 1.6; ambCricket(); }
+  const tg = cutActive ? 0.15 : 0.32;
+  Amb.master.gain.value += (tg - Amb.master.gain.value) * Math.min(1, dt * 2);
+}
+document.addEventListener('pointerdown', ambInit, { once: true });
+document.addEventListener('keydown', ambInit, { once: true });
+
 function placeCutHero(sh) {
   if (!hero || !sh || !sh.hero) return;
   const h = sh.hero;
@@ -1577,21 +1744,41 @@ function showCSNode() {
     placeCutHero(sh);
   }
   // quadro pintado em transição (Ken Burns) e depois a cena viva
-  const wrap = $('csImgWrap'), img = $('csImg');
+  const wrap = $('csImgWrap'), img = $('csImg'), vid = $('csVid');
   if (CS.imgTimer) { clearTimeout(CS.imgTimer); CS.imgTimer = null; }
-  if (n.img && ASSETS[n.img] && wrap) {
-    img.src = ASSETS[n.img];
-    try { wrap.getAnimations().forEach(a => a.cancel()); img.getAnimations().forEach(a => a.cancel()); } catch (e) {}
+  if (vid) { try { vid.onended = null; vid.pause(); } catch (e) {} }
+  if (n.img && ASSETS[n.img] && img) img.src = ASSETS[n.img];
+  if (wrap && (n.clip || (n.img && ASSETS[n.img]))) {
+    try { wrap.getAnimations().forEach(a => a.cancel()); if (img) img.getAnimations().forEach(a => a.cancel()); } catch (e) {}
     wrap.classList.add('show');
     wrap.style.opacity = '0';
     CS.fadeT = 0; CS.fadeDir = 1; CS.fadeT0 = performance.now();
     CS.kenT0 = performance.now();
-    img.style.transform = 'scale(1.02)';
-    CS.imgTimer = setTimeout(() => { CS.fadeDir = -1; CS.fadeT0 = performance.now(); wrap.classList.remove('show'); CS.imgTimer = null; }, 3800);
+    if (img) img.style.transform = 'scale(1.02)';
+    const fadeOff = () => { CS.fadeDir = -1; CS.fadeT0 = performance.now(); wrap.classList.remove('show'); CS.imgTimer = null; };
+    if (vid && n.clip) {
+      vid.style.display = 'block';
+      vid.src = n.clip;
+      try { vid.currentTime = 0; } catch (e) {}
+      vid.onended = fadeOff;
+      const pr = vid.play ? vid.play() : null;
+      if (pr && pr.catch) pr.catch(() => {
+        // autoplay bloqueado ou codec indisponível: usa o quadro pintado
+        vid.style.display = 'none';
+        if (!n.img || !ASSETS[n.img]) fadeOff();
+        else CS.imgTimer = setTimeout(fadeOff, 3800);
+      });
+    } else if (vid) {
+      vid.style.display = 'none';
+      CS.imgTimer = setTimeout(fadeOff, 3800);
+    } else {
+      CS.imgTimer = setTimeout(fadeOff, 3800);
+    }
   } else if (wrap) {
     wrap.classList.remove('show');
     wrap.style.opacity = '0';
     CS.fadeDir = 0; CS.fadeT = 0;
+    if (vid) { try { vid.pause(); vid.style.display = 'none'; } catch (e) {} }
   }
   if (n.finale) {
     const total = CS.a + CS.b + CS.c || 1;
@@ -1991,6 +2178,7 @@ function updateCamera(dt) {
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
+  if (window.__andoraCapture) return;
   frameCount++; frameAccum += dt;
   if (frameAccum > 4) {
     const fps = frameCount / frameAccum;
@@ -2088,6 +2276,7 @@ function animate() {
     updateHUD();
     if (t - (animate._mm || 0) > 0.24) { animate._mm = t; drawMinimap(); }
   }
+  ambTick(dt);
   renderer.render(scene, camera);
 }
 

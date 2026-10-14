@@ -65,6 +65,7 @@ button{cursor:pointer;border:none;outline:none;font-family:inherit}
 #csImgWrap{position:absolute;inset:0;z-index:2;opacity:0;pointer-events:none}
 #csImgWrap.show{opacity:1}
 #csImg{width:100%;height:100%;object-fit:cover;display:block;transform:scale(1.02);transform-origin:52% 45%}
+#csVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;background:transparent}
 @keyframes kenburns{from{transform:scale(1.02)}to{transform:scale(1.12)}}
 #csVignette{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 45%,transparent 52%,rgba(4,6,12,.55))}
 #csVignette{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 52%,rgba(0,0,0,.55) 100%);pointer-events:none}
@@ -175,7 +176,7 @@ button{cursor:pointer;border:none;outline:none;font-family:inherit}
 <div id="cutscene" class="hidden">
   <div id="csBarTop"></div>
   <button id="csSkip">Pular ▶</button>
-  <div id="csImgWrap"><img id="csImg" alt="cena"><div id="csVignette"></div></div>
+  <div id="csImgWrap"><img id="csImg" alt="cena"><video id="csVid" playsinline preload="auto"></video><div id="csVignette"></div></div>
   <div id="csBarBot">
     <div id="csCard">
       <div id="csWho">Narrador</div>
