@@ -397,6 +397,28 @@ function texClone(t, rx, ry) {
   c.repeat.set(rx, ry);
   return c;
 }
+const texCobble = makeTexture(256, (x, s) => {
+  x.fillStyle = '#8f8472'; x.fillRect(0, 0, s, s);
+  for (let i = 0; i < 230; i++) {
+    const px = Math.random() * s, py = Math.random() * s, r = 7 + Math.random() * 12;
+    const v = 125 + Math.floor(Math.random() * 75);
+    x.fillStyle = 'rgb(' + (v + 20) + ',' + (v + 12) + ',' + v + ')';
+    x.beginPath();
+    for (let k = 0; k < 7; k++) {
+      const a = (k / 7) * 6.28, rr = r * (0.78 + Math.random() * 0.4);
+      const qx = px + Math.cos(a) * rr, qy = py + Math.sin(a) * rr;
+      if (k === 0) x.moveTo(qx, qy); else x.lineTo(qx, qy);
+    }
+    x.closePath(); x.fill();
+    x.strokeStyle = 'rgba(62,54,44,0.6)'; x.lineWidth = 2.4; x.stroke();
+  }
+});
+const texStripe = makeTexture(128, (x, s) => {
+  for (let i = 0; i < 8; i++) {
+    x.fillStyle = i % 2 ? '#f8f4ea' : '#5c5c5c';
+    x.fillRect((i / 8) * s, 0, s / 8 + 1, s);
+  }
+});
 const texDetail = makeTexture(256, (x, s) => {
   x.fillStyle = '#e6e6e6'; x.fillRect(0, 0, s, s);
   for (let i = 0; i < 900; i++) {
@@ -818,6 +840,66 @@ function buildNature() {
   bushes.instanceMatrix.needsUpdate = true;
   if (bushes.instanceColor) bushes.instanceColor.needsUpdate = true;
   scene.add(bushes);
+  // ---- campos de flores: lupins, papoulas e margaridas (como nas pinturas) ----
+  const lupineGeoM = mergeParts([
+    { geo: new THREE.CylinderGeometry(0.022, 0.032, 0.66, 5), matrix: new THREE.Matrix4().makeTranslation(0, 0.33, 0), color: new THREE.Color(0x3f7a34) },
+    { geo: new THREE.ConeGeometry(0.13, 0.62, 6), matrix: new THREE.Matrix4().makeTranslation(0, 0.82, 0), color: new THREE.Color(0x7a52c8) }
+  ]);
+  const poppyGeoM = mergeParts([
+    { geo: new THREE.CylinderGeometry(0.02, 0.028, 0.52, 5), matrix: new THREE.Matrix4().makeTranslation(0, 0.26, 0), color: new THREE.Color(0x3f7a34) },
+    { geo: new THREE.SphereGeometry(0.11, 8, 6), matrix: new THREE.Matrix4().makeTranslation(0, 0.56, 0), color: new THREE.Color(0xe0562e) }
+  ]);
+  const daisyGeoM = mergeParts([
+    { geo: new THREE.CylinderGeometry(0.018, 0.026, 0.44, 5), matrix: new THREE.Matrix4().makeTranslation(0, 0.22, 0), color: new THREE.Color(0x3f7a34) },
+    { geo: new THREE.CylinderGeometry(0.145, 0.145, 0.032, 9), matrix: new THREE.Matrix4().makeTranslation(0, 0.47, 0), color: new THREE.Color(0xf4f0e2) },
+    { geo: new THREE.SphereGeometry(0.056, 7, 5), matrix: new THREE.Matrix4().makeTranslation(0, 0.5, 0), color: new THREE.Color(0xe8c23a) }
+  ]);
+  const flowerMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  addWind(flowerMat, 0.08);
+  const flowerOk = (x, z, h) => h > -1.6 && h < 22 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 6 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 9;
+  const meadowOk = (x, z, h) => h > -1.6 && h < 22 && (roadFactor(x, z) > 0.015 || distTo(x, z, 0, 195) < 130) && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 6 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 11;
+  function scatterFlowers(geo, count, okFn, hue, sat, lit) {
+    const im = new THREE.InstancedMesh(geo, flowerMat, count);
+    for (let i = 0; i < count; i++) {
+      const pos = scatterPos(okFn);
+      if (!pos) { im.setMatrixAt(i, zero); continue; }
+      const sc = rand(0.75, 1.35);
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
+      p.set(pos.x, pos.h, pos.z); s.set(sc, sc * rand(0.85, 1.3), sc);
+      m.compose(p, q, s); im.setMatrixAt(i, m);
+      c.setHSL(hue + rand(-0.035, 0.035), sat + rand(-0.12, 0.12), lit + rand(-0.14, 0.14));
+      im.setColorAt(i, c);
+    }
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    scene.add(im);
+    return im;
+  }
+  const flMul = IS_TOUCH ? 0.55 : 1;
+  scatterFlowers(lupineGeoM, Math.floor(560 * flMul), meadowOk, 0.72, 0.55, 0.72);
+  scatterFlowers(poppyGeoM, Math.floor(520 * flMul), flowerOk, 0.035, 0.72, 0.62);
+  scatterFlowers(daisyGeoM, Math.floor(580 * flMul), flowerOk, 0.13, 0.18, 0.88);
+  // ---- névoa suave do vale (manhãs e crepúsculos) ----
+  const mistList = [];
+  for (let i = 0; i < 11; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xeef2f6, transparent: true, opacity: 0, depthWrite: false }));
+    const ang = rand(0, 6.28), rr = rand(55, 300);
+    const mx = Math.cos(ang) * rr, mz = Math.sin(ang) * rr;
+    const mh = height(mx, mz);
+    sp.position.set(mx, Math.max(mh + rand(1.5, 5), WATER_Y + 1.2), mz);
+    sp.scale.set(rand(60, 130), rand(15, 30), 1);
+    sp.renderOrder = 3;
+    scene.add(sp); mistList.push(sp);
+  }
+  animatables.push(t => {
+    const dawnF = clamp(1 - Math.abs(hour - 7.2) / 3.8, 0, 1) + clamp(1 - Math.abs(hour - 18.3) / 3.2, 0, 1);
+    for (let i = 0; i < mistList.length; i++) {
+      const sp = mistList[i];
+      sp.position.x += Math.sin(t * 0.05 + i * 1.7) * 0.025;
+      sp.position.z += Math.cos(t * 0.04 + i * 2.1) * 0.02;
+      sp.material.opacity = 0.07 + dawnF * 0.26;
+    }
+  });
   // tufos de grama — lâminas cruzadas com textura de verdade
   const b1 = new THREE.PlaneGeometry(1.15, 0.95); b1.translate(0, 0.46, 0);
   const b2 = new THREE.PlaneGeometry(1.15, 0.95); b2.translate(0, 0.46, 0); b2.rotateY(Math.PI / 2);
@@ -1006,6 +1088,70 @@ function buildVillage() {
   scene.add(fg);
   houseColliders.push({ x: VILLAGE.x, z: VILLAGE.z, r: 5.2 });
   animatables.push(t => { orb.position.y = 5.0 + Math.sin(t * 1.1) * 0.22; glow.position.y = orb.position.y; });
+  // ---- praça de pedra portuguesa ao redor da fonte ----
+  const cobM = new THREE.MeshLambertMaterial({ map: texClone(texCobble, 7, 7), color: 0xbfb6a6, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  const plaza = new THREE.Mesh(new THREE.CircleGeometry(21, 30), cobM);
+  plaza.rotation.x = -Math.PI / 2;
+  plaza.position.set(VILLAGE.x, height(VILLAGE.x, VILLAGE.z) + 0.1, VILLAGE.z);
+  scene.add(plaza);
+  // ---- barracas da feira (toldos listrados + mercadorias) ----
+  function makeStall(sx, sz, rot, tint) {
+    const g = new THREE.Group();
+    const woodM = new THREE.MeshLambertMaterial({ color: 0x7a5230, map: texClone(texWood, 1, 1) });
+    const table = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.22, 1.5), woodM);
+    table.position.y = 1.05; g.add(table);
+    const front = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.05, 0.14), woodM);
+    front.position.set(0, 0.52, 0.68); g.add(front);
+    for (const px of [-1.55, 1.55]) for (const pz of [-0.62, 0.62]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 2.55, 7), woodM);
+      post.position.set(px, 1.28, pz); g.add(post);
+    }
+    const awnM = new THREE.MeshLambertMaterial({ color: tint, map: texClone(texStripe, 3, 1), side: THREE.DoubleSide });
+    const awn = new THREE.Mesh(new THREE.BoxGeometry(3.95, 0.09, 2.15), awnM);
+    awn.position.set(0, 2.58, 0.12); awn.rotation.x = -0.17; g.add(awn);
+    const fruitCols = [0xd84a3a, 0xe8963a, 0x7ab040, 0xd8b83a, 0xb04a68];
+    for (let i = 0; i < 12; i++) {
+      const fr = new THREE.Mesh(new THREE.SphereGeometry(0.135 + Math.random() * 0.05, 7, 6), new THREE.MeshLambertMaterial({ color: fruitCols[i % fruitCols.length] }));
+      fr.position.set(-1.32 + (i % 6) * 0.52, 1.28, -0.18 + Math.floor(i / 6) * 0.42); g.add(fr);
+    }
+    for (let i = 0; i < 3; i++) {
+      const bread = new THREE.Mesh(new THREE.SphereGeometry(0.21, 8, 6), new THREE.MeshLambertMaterial({ color: 0xc89050 }));
+      bread.scale.set(1.45, 0.62, 0.9);
+      bread.position.set(-1.0 + i * 0.95, 1.24, -0.56); g.add(bread);
+    }
+    const rolls = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.9, 8), new THREE.MeshLambertMaterial({ color: 0x7a9ac8 }));
+    rolls.rotation.z = Math.PI / 2; rolls.position.set(1.15, 1.28, 0.3); g.add(rolls);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.3, 0.85, 9), woodM);
+    barrel.position.set(2.2, 0.42, 0.35); g.add(barrel);
+    const basket = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.3, 0.36, 9), new THREE.MeshLambertMaterial({ color: 0xb08a4a }));
+    basket.position.set(-2.15, 0.18, 0.4); g.add(basket);
+    addShadowBlob(g, 2.6);
+    g.position.set(sx, height(sx, sz), sz); g.rotation.y = rot;
+    houseColliders.push({ x: sx, z: sz, r: 2.1 });
+    scene.add(g);
+  }
+  const stallTints = [0xc85040, 0x4a8a5c, 0x4a6ac0, 0xc08a30, 0xa04a88];
+  for (let i = 0; i < 5; i++) {
+    const ang = (i / 5) * Math.PI * 2 + 0.55;
+    const r = 13.5;
+    const sx = VILLAGE.x + Math.cos(ang) * r, sz = VILLAGE.z + Math.sin(ang) * r * 0.92;
+    makeStall(sx, sz, -ang + Math.PI / 2, stallTints[i]);
+  }
+  // barris e caixas soltas pela vila
+  const crateM = new THREE.MeshLambertMaterial({ color: 0x8a6238, map: texClone(texWood, 1, 1) });
+  for (let i = 0; i < 9; i++) {
+    const ang = rand(0, 6.28), r = rand(10, 34);
+    const cx = VILLAGE.x + Math.cos(ang) * r, cz = VILLAGE.z + Math.sin(ang) * r * 0.85;
+    const hh = height(cx, cz);
+    if (i % 2 === 0) {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.29, 0.82, 9), crateM);
+      bar.position.set(cx, hh + 0.41, cz); bar.rotation.y = rand(0, 6.28); scene.add(bar);
+    } else {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.72, 0.85), crateM);
+      box.position.set(cx, hh + 0.36, cz); box.rotation.y = rand(0, 6.28); scene.add(box);
+    }
+    addShadowBlob(scene.children[scene.children.length - 1], 0.9);
+  }
   // moinho
   const mg = new THREE.Group();
   const tower = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 4.4, 13, 10), new THREE.MeshLambertMaterial({ color: 0xd8c6a2 }));
@@ -2623,16 +2769,16 @@ function updateHero(dt) {
   if (mag > 1) { mx /= mag; mz /= mag; }
   const moving = mag > 0.08;
   // velocidades
-  let speed = 7.6;
+  let speed = 5.8;
   const wantRun = input.run || keys['ShiftLeft'] || keys['ShiftRight'];
-  if (wantRun && hero.stamina > 1 && moving) { speed = 13.2; hero.stamina = clamp(hero.stamina - 24 * dt, 0, 100); }
+  if (wantRun && hero.stamina > 1 && moving) { speed = 11; hero.stamina = clamp(hero.stamina - 24 * dt, 0, 100); }
   else hero.stamina = clamp(hero.stamina + 15 * dt, 0, 100);
   if (hero.swimming) speed = 3.4;
   if (hero.mounted) {
-    speed = 21;
+    speed = 18;
     const hs = hero.mountedHorse;
     if (hs && (hs.hunger < 15 || hs.thirst < 15)) speed = 12;
-    if (wantRun && hero.stamina > 1) { speed = 29; hero.stamina = clamp(hero.stamina - 16 * dt, 0, 100); }
+    if (wantRun && hero.stamina > 1) { speed = 26; hero.stamina = clamp(hero.stamina - 16 * dt, 0, 100); }
     if (hs) {
       hs.hunger = clamp(hs.hunger - 0.28 * dt, 0, 100);
       hs.thirst = clamp(hs.thirst - 0.34 * dt, 0, 100);
@@ -2650,7 +2796,7 @@ function updateHero(dt) {
     hero.x = fixed.x; hero.z = fixed.z;
     hero.yaw = lerp(hero.yaw, Math.atan2(wx, wz), 1 - Math.exp(-10 * dt));
     hero.speed = speed;
-    hero.animT += dt * (speed * 0.62);
+    hero.animT += dt * speed * (hero.mounted ? 0.5 : hero.swimming ? 1.1 : 1.75);
   } else {
     hero.speed = 0;
     hero.animT += dt * 1.6;
@@ -2800,7 +2946,7 @@ function animate() {
     }
   }
   if (hero && camera && !cutActive) {
-    const tf = hero.speed >= 18 ? 74 : (hero.speed > 10 ? 68.5 : 62);
+    const tf = hero.speed >= 15 ? 73.5 : (hero.speed > 8 ? 67.5 : 62);
     if (Math.abs(camera.fov - tf) > 0.04) { camera.fov += (tf - camera.fov) * (1 - Math.exp(-3.2 * dt)); camera.updateProjectionMatrix(); }
   }
   updateSky();
