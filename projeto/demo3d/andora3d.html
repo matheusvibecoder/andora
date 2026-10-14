@@ -346,7 +346,9 @@ function terrainColor(x, z, h, out) {
 /* ---------------- estado do jogo ---------------- */
 let scene, camera, renderer, clock, skyDome;
 let sun, moon, hemi, stars, sunSprite, moonSprite, glowTex, lanternGlowMats = [], lanternCoreMats = [];
-let sunDir = new THREE.Vector3(0, 1, 0), cloudMatG = null, motePts = null, sunCore = null;
+let sunDir = new THREE.Vector3(0, 1, 0), cloudMatG = null, motePts = null, sunCore = null, leafPts = null, gradeEl = null;
+let windowMats = [];
+const windU = { value: 0 };
 let frameCount = 0, frameAccum = 0, qualityLevel = 2;
 let terrain, water;
 let hero = null, horseList = [], npcList = [], animalList = [], pickupList = [], lanternList = [], clouds = [], birds = [];
@@ -459,6 +461,14 @@ const texBlade = makeTexture(128, (x, s) => {
     x.closePath(); x.fill();
   }
 });
+const texLeaf = makeTexture(64, (x, s) => {
+  x.clearRect(0, 0, s, s);
+  x.fillStyle = '#9ab848';
+  x.beginPath(); x.ellipse ? x.ellipse(s / 2, s / 2, s * 0.26, s * 0.4, 0.6, 0, 6.28) : x.arc(s / 2, s / 2, s * 0.3, 0, 6.28);
+  x.fill();
+  x.strokeStyle = 'rgba(80,100,40,0.7)'; x.lineWidth = 2;
+  x.beginPath(); x.moveTo(s / 2, s * 0.18); x.lineTo(s / 2, s * 0.82); x.stroke();
+});
 const texPuff = makeTexture(128, (x, s) => {
   x.clearRect(0, 0, s, s);
   for (let i = 0; i < 24; i++) {
@@ -469,6 +479,16 @@ const texPuff = makeTexture(128, (x, s) => {
     x.fillStyle = g; x.beginPath(); x.arc(px, py, r, 0, 6.28); x.fill();
   }
 });
+
+function addWind(mat, amp) {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTimeW = windU;
+    shader.vertexShader = 'uniform float uTimeW;\n' + shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      '#include <begin_vertex>\nfloat wph = 0.0;\n#ifdef USE_INSTANCING\n wph = instanceMatrix[3][0] * 0.31 + instanceMatrix[3][2] * 0.47;\n#endif\nfloat wbend = sin(uTimeW * 1.7 + wph) * 0.6 + sin(uTimeW * 0.83 + wph * 1.9) * 0.4;\ntransformed.x += wbend * AMPVAL * max(transformed.y, 0.0);\ntransformed.z += wbend * AMPVAL * 0.6 * max(transformed.y, 0.0);'.replace(/AMPVAL/g, amp.toFixed(3))
+    );
+  };
+}
 
 function setupSky() {
   hemi = new THREE.HemisphereLight(0x9fd4ff, 0x5a7a4a, 0.5); scene.add(hemi);
@@ -545,6 +565,21 @@ function setupSky() {
     motePts.rotation.y = t * 0.012;
     motePts.position.y = Math.sin(t * 0.25) * 0.9;
   });
+  // folhas ao vento
+  const lg = new THREE.BufferGeometry();
+  const ln = 90, lpos = new Float32Array(ln * 3);
+  for (let i = 0; i < ln; i++) {
+    lpos[i * 3] = rand(-380, 380);
+    lpos[i * 3 + 1] = rand(2, 13);
+    lpos[i * 3 + 2] = rand(-380, 380);
+  }
+  lg.setAttribute('position', new THREE.BufferAttribute(lpos, 3));
+  leafPts = new THREE.Points(lg, new THREE.PointsMaterial({ map: texLeaf, color: 0xc8d878, size: 2.3, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+  scene.add(leafPts);
+  animatables.push(t => {
+    leafPts.rotation.y = t * 0.024;
+    leafPts.position.y = -((t * 0.55) % 9);
+  });
 }
 const cNightTop = new THREE.Color(0x0b1026), cDayTop = new THREE.Color(0x2f6cc4), cDuskTop = new THREE.Color(0x6a4c93);
 const cNightBot = new THREE.Color(0x1a2a4a), cDayBot = new THREE.Color(0xa8d4ec), cDuskBot = new THREE.Color(0xf2925c);
@@ -576,6 +611,14 @@ function updateSky() {
   if (motePts) motePts.material.opacity = dayF * 0.26 * (1 - duskF * 0.5);
   for (let i = 0; i < lanternGlowMats.length; i++) lanternGlowMats[i].opacity = 0.18 + nightF * 0.82;
   for (let i = 0; i < lanternCoreMats.length; i++) lanternCoreMats[i].emissive.setRGB(nightF * 1.0, nightF * 0.62, nightF * 0.22);
+  for (let i = 0; i < windowMats.length; i++) windowMats[i].emissive.setRGB(0.1 * dayF + nightF * 0.55, 0.18 * dayF + nightF * 0.3, 0.28 * dayF + nightF * 0.1);
+  if (sunSprite) sunSprite.scale.set(110 + duskF * 65, 110 + duskF * 65, 1);
+  if (leafPts) leafPts.material.opacity = 0.42 * dayF * (1 - duskF * 0.5);
+  if (gradeEl) {
+    gradeEl.style.background = duskF > 0.18
+      ? 'rgba(255,140,70,' + (0.2 * duskF).toFixed(3) + ')'
+      : (dayF > 0.5 ? 'rgba(255,225,175,' + (0.1 * dayF).toFixed(3) + ')' : 'rgba(40,70,140,' + (0.24 * (1 - dayF)).toFixed(3) + ')');
+  }
   sunSprite.position.copy(sunDir).multiplyScalar(465);
   if (sunCore) { sunCore.position.copy(sunDir).multiplyScalar(458); sunCore.material.opacity = clamp(elev * 4, 0, 1); }
   sun.color.copy(cSunWarm).lerp(cSunNoon, dayF).lerp(cSunDusk, duskF * 0.85);
@@ -624,7 +667,7 @@ function buildTerrain() {
     uniforms: wu,
     transparent: true,
     vertexShader: 'uniform float uTime;\nvarying vec3 vWp; varying vec3 vV; varying vec3 vN;\nvoid main(){\n vec4 wp = modelMatrix * vec4(position, 1.0);\n float w1 = sin(wp.x * 0.35 + uTime * 1.1) * cos(wp.z * 0.42 + uTime * 0.8);\n float w2 = sin(wp.x * 0.62 - uTime * 1.3) * sin(wp.z * 0.55 + uTime * 0.6);\n wp.y += w1 * 0.12 + w2 * 0.07;\n float dx = 0.35 * cos(wp.x * 0.35 + uTime * 1.1) * cos(wp.z * 0.42 + uTime * 0.8) * 0.12 + 0.62 * cos(wp.x * 0.62 - uTime * 1.3) * sin(wp.z * 0.55 + uTime * 0.6) * 0.07;\n float dz = -0.42 * sin(wp.x * 0.35 + uTime * 1.1) * sin(wp.z * 0.42 + uTime * 0.8) * 0.12 + 0.55 * sin(wp.x * 0.62 - uTime * 1.3) * cos(wp.z * 0.55 + uTime * 0.6) * 0.07;\n vN = normalize(vec3(-dx * 3.5, 1.0, -dz * 3.5));\n vWp = wp.xyz;\n vec4 mv = viewMatrix * wp;\n vV = -mv.xyz;\n gl_Position = projectionMatrix * mv;\n}',
-    fragmentShader: 'uniform float uTime;\nuniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uSunDir; uniform vec3 uSunCol;\nuniform vec2 uCenter; uniform float uRadius;\nuniform vec3 fogColor; uniform float fogDensity;\nvarying vec3 vWp; varying vec3 vV; varying vec3 vN;\nvoid main(){\n vec3 N = normalize(vN); vec3 V = normalize(vV);\n float fres = pow(1.0 - max(dot(N, V), 0.0), 1.6);\n float ripple = N.x * 0.5 + N.z * 0.45;\n vec3 col = mix(uDeep, uShallow, clamp(0.3 + ripple * 1.4, 0.0, 1.0));\n col = mix(col, uSky, clamp(fres * 0.9 + ripple * 0.3 + 0.12, 0.0, 0.88));\n vec3 L = normalize(uSunDir);\n vec3 H = normalize(L + V);\n float spec = pow(max(dot(N, H), 0.0), 60.0);\n col += uSunCol * spec * 0.8;\n float glint = pow(max(dot(reflect(-L, N), V), 0.0), 24.0);\n col += uSunCol * glint * 0.18;\n float sparkle = pow(max(dot(N, H), 0.0), 320.0) * 1.6;\n col += uSunCol * sparkle;\n float d = length(vWp.xz - uCenter);\n float foam = smoothstep(uRadius - 10.0, uRadius - 0.5, d);\n foam *= 0.55 + 0.45 * sin(d * 1.4 - uTime * 1.6 + sin(vWp.x * 0.3 + uTime));\n col = mix(col, vec3(0.93, 0.97, 1.0), clamp(foam, 0.0, 0.7) * 0.7);\n float fd = length(vV);\n float fogF = 1.0 - exp(-fogDensity * fogDensity * fd * fd);\n col = mix(col, fogColor, fogF);\n gl_FragColor = vec4(col, 0.955);\n}'
+    fragmentShader: 'uniform float uTime;\nuniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uSunDir; uniform vec3 uSunCol;\nuniform vec2 uCenter; uniform float uRadius;\nuniform vec3 fogColor; uniform float fogDensity;\nvarying vec3 vWp; varying vec3 vV; varying vec3 vN;\nvoid main(){\n vec3 N = normalize(vN); vec3 V = normalize(vV);\n float fres = pow(1.0 - max(dot(N, V), 0.0), 1.6);\n float ripple = N.x * 0.5 + N.z * 0.45;\n vec3 col = mix(uDeep, uShallow, clamp(0.3 + ripple * 1.4, 0.0, 1.0));\n col = mix(col, uSky, clamp(fres * 0.9 + ripple * 0.3 + 0.12, 0.0, 0.88));\n vec3 L = normalize(uSunDir);\n vec3 H = normalize(L + V);\n vec3 Lp = normalize(vec3(L.x, max(L.y, 0.02) * 0.22, L.z));\n vec3 H2 = normalize(Lp + V);\n float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.8;\n float path = pow(max(dot(N, H2), 0.0), 70.0) * 1.5;\n col += uSunCol * (spec + path);\n float glint = pow(max(dot(reflect(-L, N), V), 0.0), 24.0);\n col += uSunCol * glint * 0.18;\n float sparkle = pow(max(dot(N, H), 0.0), 320.0) * 1.6;\n col += uSunCol * sparkle;\n float d = length(vWp.xz - uCenter);\n float foam = smoothstep(uRadius - 10.0, uRadius - 0.5, d);\n foam *= 0.55 + 0.45 * sin(d * 1.4 - uTime * 1.6 + sin(vWp.x * 0.3 + uTime));\n col = mix(col, vec3(0.93, 0.97, 1.0), clamp(foam, 0.0, 0.7) * 0.7);\n float fd = length(vV);\n float fogF = 1.0 - exp(-fogDensity * fogDensity * fd * fd);\n col = mix(col, fogColor, fogF);\n gl_FragColor = vec4(col, 0.955);\n}'
   });
   water = new THREE.Mesh(wgeo, wmat);
   water.position.set(LAKE.x, WATER_Y, LAKE.z);
@@ -697,6 +740,7 @@ function buildNature() {
     { geo: roughen(new THREE.IcosahedronGeometry(1.25, 1), 0.24, 1, 0.8, 1), matrix: new THREE.Matrix4().makeTranslation(0.15, 5.55, 0.15), color: new THREE.Color(0x57a046) }
   ]);
   const treeMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: texClone(texDetail, 1, 1) });
+  addWind(treeMat, 0.045);
   const N = 320;
   const pines = new THREE.InstancedMesh(pineGeoM, treeMat, N);
   const broads = new THREE.InstancedMesh(broadGeoM, treeMat, N);
@@ -707,9 +751,9 @@ function buildNature() {
     const inForest = Math.random() < 0.62;
     const pos = inForest ? scatterPos((x, z, h) => {
       const d = distTo(x, z, FOREST.x, FOREST.z);
-      return d < 155 && h > 1.2 && h < 34 && roadFactor(x, z) < 0.25;
+      return d < 155 && h > -1.8 && h < 34 && roadFactor(x, z) < 0.25;
     }) : scatterPos((x, z, h) => {
-      return h > 1.4 && h < 38 && roadFactor(x, z) < 0.2 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 95 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 12 && distTo(x, z, RUINS.x, RUINS.z) > 40;
+      return h > -1.8 && h < 38 && roadFactor(x, z) < 0.2 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 95 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 12 && distTo(x, z, RUINS.x, RUINS.z) > 40;
     });
     if (!pos) continue;
     const sc = rand(0.8, 1.55), rot = rand(0, Math.PI * 2);
@@ -731,9 +775,11 @@ function buildNature() {
   scene.add(pines, broads);
   // arbustos
   const bushGeo = new THREE.IcosahedronGeometry(1.15, 1);
-  const bushes = new THREE.InstancedMesh(bushGeo, new THREE.MeshLambertMaterial({}), 110);
+  const bushMat = new THREE.MeshLambertMaterial({});
+  addWind(bushMat, 0.05);
+  const bushes = new THREE.InstancedMesh(bushGeo, bushMat, 110);
   for (let i = 0; i < 110; i++) {
-    const pos = scatterPos((x, z, h) => h > 0.6 && h < 30 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 6);
+    const pos = scatterPos((x, z, h) => h > -2.4 && h < 30 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 6);
     if (!pos) { bushes.setMatrixAt(i, zero); continue; }
     const sc = rand(0.6, 1.5);
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
@@ -753,9 +799,10 @@ function buildNature() {
     { geo: b2, matrix: new THREE.Matrix4(), color: new THREE.Color(0xf2f2f2) }
   ]);
   const tuftMat = new THREE.MeshLambertMaterial({ map: texClone(texBlade, 1, 1), alphaTest: 0.42, side: THREE.DoubleSide });
+  addWind(tuftMat, 0.17);
   const tuftN = IS_TOUCH ? 2600 : 6000;
   const tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, tuftN);
-  const tuftOk = (x, z, h) => h > 0.35 && h < 26 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 4 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 8;
+  const tuftOk = (x, z, h) => h > -2.6 && h < 26 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 4 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 8;
   let placed = 0;
   for (let gx = -425; gx <= 425 && placed < tuftN; gx += 8.5) {
     for (let gz = -425; gz <= 425 && placed < tuftN; gz += 8.5) {
@@ -785,7 +832,7 @@ function buildNature() {
   const rockGeo = roughen(new THREE.IcosahedronGeometry(1.5, 0), 0.32, 1, 1, 1);
   const rocks = new THREE.InstancedMesh(rockGeo, new THREE.MeshLambertMaterial({ color: 0x8a8478 }), 130);
   for (let i = 0; i < 130; i++) {
-    const pos = scatterPos((x, z, h) => h > 2 && h < 62 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 40);
+    const pos = scatterPos((x, z, h) => h > -1.5 && h < 62 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 40);
     if (!pos) { rocks.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0)); continue; }
     const sc = rand(0.5, 2.2);
     q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
@@ -798,7 +845,7 @@ function buildNature() {
   const flMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const fl = new THREE.InstancedMesh(flGeo, flMat, 650);
   for (let i = 0; i < 650; i++) {
-    const pos = scatterPos((x, z, h) => h > 0.7 && h < 26 && roadFactor(x, z) < 0.3 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 4);
+    const pos = scatterPos((x, z, h) => h > -2.4 && h < 26 && roadFactor(x, z) < 0.3 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 4);
     if (!pos) { fl.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0)); continue; }
     p.set(pos.x, pos.h + 0.22, pos.z); s.set(1, 1, 1); q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0);
     m.compose(p, q, s); fl.setMatrixAt(i, m);
@@ -843,6 +890,7 @@ function makeHouse(x, z, rot, sc, wall, roof) {
   door.position.set(0, 1.25 * sc, 3.82 * sc); g.add(door);
   const frameM = new THREE.MeshLambertMaterial({ color: 0xefe6d2 });
   const winM = new THREE.MeshLambertMaterial({ color: 0x2a3a4a, emissive: 0x1a2836 });
+  windowMats.push(winM);
   for (const wx of [-2.6, 2.6]) {
     for (const wz of [3.82, -3.82]) {
       const frame = new THREE.Mesh(new THREE.BoxGeometry(1.55 * sc, 1.55 * sc, 0.12), frameM);
@@ -1974,10 +2022,10 @@ function updateHero(dt) {
     hero.legL.rotation.x = sw * 0.62; hero.legR.rotation.x = -sw * 0.62;
     hero.armL.rotation.x = -sw * 0.5; hero.armR.rotation.x = sw * 0.5;
     if (hero.swimming) {
-      hero.g.rotation.x = lerp(hero.g.rotation.x, 0.45, dt * 6);
+      hero.g.rotation.x = lerp(hero.g.rotation.x, 0.28, dt * 6);
       hero.armL.rotation.x = Math.sin(hero.animT * 4) * 1.4;
       hero.armR.rotation.x = -Math.sin(hero.animT * 4) * 1.4;
-      hero.legL.rotation.x = 0.65; hero.legR.rotation.x = 0.65;
+      hero.legL.rotation.x = 0.5; hero.legR.rotation.x = 0.5;
     } else hero.g.rotation.x = lerp(hero.g.rotation.x, 0, dt * 8);
   }
   // cavalo montado segue o herói
@@ -2053,6 +2101,11 @@ function animate() {
   const t = worldTime;
   if (gameStarted && !menuMode && !dlgNpc) updateHero(dt);
   if (hero) updateCamera(dt);
+  windU.value = worldTime;
+  if (hero && camera) {
+    const tf = hero.speed >= 18 ? 74 : (hero.speed > 10 ? 68.5 : 62);
+    if (Math.abs(camera.fov - tf) > 0.04) { camera.fov += (tf - camera.fov) * (1 - Math.exp(-3.2 * dt)); camera.updateProjectionMatrix(); }
+  }
   updateSky();
   for (const fn of animatables) fn(t, dt);
   for (const hs of horseList) horseThink(hs, dt);
@@ -2126,6 +2179,9 @@ function boot() {
     const vig = document.createElement('div');
     vig.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:8;background:radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 52%, rgba(8,10,16,0.32) 100%)';
     document.body.appendChild(vig);
+    gradeEl = document.createElement('div');
+    gradeEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9;mix-blend-mode:soft-light;background:transparent';
+    document.body.appendChild(gradeEl);
   } catch (e) {}
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
