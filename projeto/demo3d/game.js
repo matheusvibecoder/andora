@@ -80,10 +80,14 @@ function roadFactor(x, z) {
   for (let i = 0; i < ROADS.length; i++) { const s = ROADS[i]; best = Math.min(best, segDist(x, z, s[0], s[1], s[2], s[3])); }
   return clamp(1 - best / 6.5, 0, 1);
 }
-function terrainColor(x, z, h, out) {
+function terrainColor(x, z, h, out, slopeIn) {
   const road = roadFactor(x, z);
-  const hx = height(x + 2.5, z) - height(x - 2.5, z), hz = height(x, z + 2.5) - height(x, z - 2.5);
-  const slope = Math.sqrt(hx * hx + hz * hz) / 5;
+  let slope;
+  if (slopeIn !== undefined) slope = slopeIn;
+  else {
+    const hx = height(x + 2.5, z) - height(x - 2.5, z), hz = height(x, z + 2.5) - height(x, z - 2.5);
+    slope = Math.sqrt(hx * hx + hz * hz) / 5;
+  }
   const n = fbm(x * 0.02 + 40, z * 0.02 + 17);
   const n2 = fbm(x * 0.006 + 11, z * 0.006 + 5);
   let r, g, b;
@@ -118,12 +122,12 @@ let windowMats = [];
 let reflRT = null, reflCam = null;
 const windU = { value: 0 };
 const _reflDir = new THREE.Vector3(), _reflLook = new THREE.Vector3(), _reflTexMat = new THREE.Matrix4();
-let frameCount = 0, frameAccum = 0, qualityLevel = 2;
+let frameCount = 0, frameAccum = 0, qualityLevel = IS_TOUCH ? 1 : 2;
 let terrain = null, water;
 const CHUNK = 100, CHUNK_SEGS = 18;
 const chunkMap = new Map();
 let terrainMatShared = null, chunkR = IS_TOUCH ? 5 : 7, lastChunkGX = 999999, lastChunkGZ = 999999;
-let seedX = 1e9, seedZ = 1e9, seedNature = null;
+let seedX = 1e9, seedZ = 1e9, seedNature = null, seedQueue = [], seedSlice = null;
 let hero = null, horseList = [], npcList = [], animalList = [], pickupList = [], lanternList = [], clouds = [], birds = [];
 let windmillBlades = null;
 const animatables = [];
@@ -299,7 +303,7 @@ function updateEnvironment(force) {
   try {
     if (!renderer || !THREE.PMREMGenerator) return;
     if (!envPMREM) envPMREM = new THREE.PMREMGenerator(renderer);
-    if (!force && Math.abs(hour - envHour) < 0.7) return;
+    if (!force && Math.abs(hour - envHour) < 1.5) return;
     envHour = hour;
     const c = document.createElement('canvas'); c.width = 256; c.height = 128;
     const x = c.getContext('2d');
@@ -367,7 +371,7 @@ function setupComposer() {
     if (!THREE.EffectComposer || !THREE.UnrealBloomPass) return;
     composer = new THREE.EffectComposer(renderer);
     composer.addPass(new THREE.RenderPass(scene, camera));
-    bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.28, 0.5, 0.88);
+    bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(Math.floor(window.innerWidth * 0.5), Math.floor(window.innerHeight * 0.5)), 0.28, 0.5, 0.88);
     composer.addPass(bloomPass);
     if (THREE.ShaderPass) {
       gradePass = new THREE.ShaderPass(GradeShader);
@@ -524,13 +528,21 @@ function chunkBuild(cx, cz) {
   geo.rotateX(-Math.PI / 2);
   geo.translate(cx * CHUNK + CHUNK / 2, 0, cz * CHUNK + CHUNK / 2);
   const pos = geo.attributes.position;
-  const colors = new Float32Array(pos.count * 3);
+  const nv = pos.count, n = CHUNK_SEGS + 1;
+  const hs = new Float32Array(nv);
+  for (let i = 0; i < nv; i++) {
+    hs[i] = height(pos.getX(i), pos.getZ(i));
+    pos.setY(i, hs[i]);
+  }
+  const colors = new Float32Array(nv * 3);
   const col = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
+  for (let i = 0; i < nv; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
-    const h = height(x, z);
-    pos.setY(i, h);
-    terrainColor(x, z, h, col);
+    const ix = i % n, iz = (i / n) | 0;
+    const hL = hs[iz * n + Math.max(ix - 1, 0)], hR = hs[iz * n + Math.min(ix + 1, n - 1)];
+    const hD = hs[Math.max(iz - 1, 0) * n + ix], hU = hs[Math.min(iz + 1, n - 1) * n + ix];
+    const slope = Math.sqrt(Math.pow((hR - hL) * 0.45, 2) + Math.pow((hU - hD) * 0.45, 2)) / 5;
+    terrainColor(x, z, hs[i], col, slope);
     colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -571,7 +583,7 @@ function updateChunks(force) {
     }
   }
   missing.sort((a, b) => a[2] - b[2]);
-  const budget = force ? 320 : (moved ? 22 : 6);
+  const budget = force ? 48 : (moved ? 10 : 2);
   let built = 0;
   for (let i = 0; i < missing.length && built < budget; i++, built++) chunkBuild(missing[i][0], missing[i][1]);
   chunkPending = built >= budget && missing.length > built;
@@ -828,89 +840,100 @@ function buildNature() {
   rocks.castShadow = true; scene.add(rocks);
   const rockOk = (x, z, h) => h > -1.5 && h < 62 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 25;
 
-  // ---- re-semeio: pools seguem o jogador (mundo infinito, draw calls constantes) ----
+  // ---- re-semeio FATIADO: uma parte por frame (zero congelamento) ----
+  const flushIm = (im) => {
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+  };
   seedNature = function () {
-    const cx = hero ? hero.x : 0, cz = hero ? hero.z : 195;
-    seedX = cx; seedZ = cz;
-    const R = 290;
+    seedX = hero ? hero.x : 0; seedZ = hero ? hero.z : 195;
+    seedQueue = ['arvores', 'arbustos', 'tufos', 'grama1', 'grama2', 'flores'];
+  };
+  seedSlice = function (part) {
+    const cx = seedX, cz = seedZ;
+    const R = 250;
     const qMul = qualityLevel >= 2 ? 1 : (qualityLevel === 1 ? 0.55 : 0.3);
     const posNear = (ok) => {
-      for (let t = 0; t < 22; t++) {
+      for (let t = 0; t < 18; t++) {
         const x = cx + rand(-R, R), z = cz + rand(-R, R);
         const h = height(x, z);
         if (ok(x, z, h)) return { x, z, h };
       }
       return null;
     };
-    // arvores
-    let ip = 0, ib = 0;
-    const tN = Math.floor(N * qMul);
-    for (let i = 0; i < tN; i++) {
-      const pos = posNear(Math.random() < 0.62 ? treeForestOk : treeOpenOk);
-      if (!pos) continue;
-      const sc = rand(0.8, 1.55);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, Math.PI * 2));
-      p.set(pos.x, pos.h, pos.z); s.set(sc, sc * rand(0.9, 1.2), sc);
-      m.compose(p, q, s);
-      const isPine = pos.h > 15 || Math.random() < 0.45;
-      if (isPine) {
-        pines.setMatrixAt(ip, m); c.setHSL(0.325 + rand(-0.035, 0.035), 0.44, rand(0.55, 0.82)); pines.setColorAt(ip, c); ip++;
-      } else {
-        broads.setMatrixAt(ib, m); c.setHSL(0.255 + rand(-0.035, 0.035), 0.44, rand(0.58, 0.88)); broads.setColorAt(ib, c);
-        broadsL.setMatrixAt(ib, m); broadsL.setColorAt(ib, c); ib++;
+    if (part === 'arvores') {
+      let ip = 0, ib = 0;
+      const tN = Math.floor(N * qMul);
+      for (let i = 0; i < tN; i++) {
+        const pos = posNear(Math.random() < 0.62 ? treeForestOk : treeOpenOk);
+        if (!pos) continue;
+        const sc = rand(0.8, 1.55);
+        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, Math.PI * 2));
+        p.set(pos.x, pos.h, pos.z); s.set(sc, sc * rand(0.9, 1.2), sc);
+        m.compose(p, q, s);
+        const isPine = pos.h > 15 || Math.random() < 0.45;
+        if (isPine) {
+          pines.setMatrixAt(ip, m); c.setHSL(0.325 + rand(-0.035, 0.035), 0.44, rand(0.55, 0.82)); pines.setColorAt(ip, c); ip++;
+        } else {
+          broads.setMatrixAt(ib, m); c.setHSL(0.255 + rand(-0.035, 0.035), 0.44, rand(0.58, 0.88)); broads.setColorAt(ib, c);
+          broadsL.setMatrixAt(ib, m); broadsL.setColorAt(ib, c); ib++;
+        }
       }
-    }
-    for (let i = ip; i < N; i++) pines.setMatrixAt(i, zero);
-    for (let i = ib; i < N; i++) { broads.setMatrixAt(i, zero); broadsL.setMatrixAt(i, zero); }
-    pines.count = ip; broads.count = ib; broadsL.count = ib;
-    // arbustos
-    const bN = Math.floor(130 * qMul);
-    for (let i = 0; i < bN; i++) {
-      const pos = posNear(bushOk);
-      if (!pos) { bushes.setMatrixAt(i, zero); continue; }
-      const sc = rand(0.6, 1.5);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
-      p.set(pos.x, pos.h + 0.55 * sc, pos.z); s.set(sc, sc * 0.75, sc);
-      m.compose(p, q, s); bushes.setMatrixAt(i, m);
-      c.setHSL(0.28 + rand(-0.03, 0.03), 0.4, rand(0.3, 0.44)); bushes.setColorAt(i, c);
-    }
-    bushes.count = bN;
-    // pedras
-    const rN = Math.floor(140 * qMul);
-    for (let i = 0; i < rN; i++) {
-      const pos = posNear(rockOk);
-      if (!pos) { rocks.setMatrixAt(i, zero); continue; }
-      const sc = rand(0.5, 2.2);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
-      p.set(pos.x, pos.h + 0.5 * sc, pos.z); s.set(sc, sc * rand(0.55, 0.9), sc);
-      m.compose(p, q, s); rocks.setMatrixAt(i, m);
-    }
-    rocks.count = rN;
-    // tufos
-    let placed = 0;
-    const tuN = Math.floor(tuftN * qMul);
-    for (let gx = cx - 320; gx <= cx + 320 && placed < tuN; gx += 9.5) {
-      for (let gz = cz - 320; gz <= cz + 320 && placed < tuN; gz += 9.5) {
-        const x = gx + (Math.random() - 0.5) * 11, z = gz + (Math.random() - 0.5) * 11;
-        const hh = height(x, z);
-        if (!tuftOk(x, z, hh) || Math.random() < 0.3) continue;
-        const sc = rand(1.3, 2.8);
+      for (let i = ip; i < N; i++) pines.setMatrixAt(i, zero);
+      for (let i = ib; i < N; i++) { broads.setMatrixAt(i, zero); broadsL.setMatrixAt(i, zero); }
+      pines.count = ip; broads.count = ib; broadsL.count = ib;
+      flushIm(pines); flushIm(broads); flushIm(broadsL);
+    } else if (part === 'arbustos') {
+      const bN = Math.floor(130 * qMul);
+      for (let i = 0; i < bN; i++) {
+        const pos = posNear(bushOk);
+        if (!pos) { bushes.setMatrixAt(i, zero); continue; }
+        const sc = rand(0.6, 1.5);
         q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
-        p.set(x, hh + 0.02, z); s.set(sc, sc * rand(0.85, 1.3), sc);
-        m.compose(p, q, s); tufts.setMatrixAt(placed, m);
-        c.setHSL(0.24 + rand(-0.03, 0.03), 0.45, rand(0.65, 0.95)); tufts.setColorAt(placed, c);
-        placed++;
+        p.set(pos.x, pos.h + 0.55 * sc, pos.z); s.set(sc, sc * 0.75, sc);
+        m.compose(p, q, s); bushes.setMatrixAt(i, m);
+        c.setHSL(0.28 + rand(-0.03, 0.03), 0.4, rand(0.3, 0.44)); bushes.setColorAt(i, c);
       }
-    }
-    tufts.count = placed;
-    // laminas de grama
-    let bp = 0;
-    const blN = Math.floor(bladeN * qMul);
-    for (let gx = cx - 270; gx <= cx + 270 && bp < blN; gx += 4.6) {
-      for (let gz = cz - 270; gz <= cz + 270 && bp < blN; gz += 4.6) {
-        const x = gx + (Math.random() - 0.5) * 5, z = gz + (Math.random() - 0.5) * 5;
+      bushes.count = bN;
+      const rN = Math.floor(140 * qMul);
+      for (let i = 0; i < rN; i++) {
+        const pos = posNear(rockOk);
+        if (!pos) { rocks.setMatrixAt(i, zero); continue; }
+        const sc = rand(0.5, 2.2);
+        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
+        p.set(pos.x, pos.h + 0.5 * sc, pos.z); s.set(sc, sc * rand(0.55, 0.9), sc);
+        m.compose(p, q, s); rocks.setMatrixAt(i, m);
+      }
+      rocks.count = rN;
+      flushIm(bushes); flushIm(rocks);
+    } else if (part === 'tufos') {
+      let placed = 0;
+      const tuN = Math.floor(tuftN * qMul);
+      for (let gx = cx - 300; gx <= cx + 300 && placed < tuN; gx += 9.5) {
+        for (let gz = cz - 300; gz <= cz + 300 && placed < tuN; gz += 9.5) {
+          const x = gx + (Math.random() - 0.5) * 11, z = gz + (Math.random() - 0.5) * 11;
+          const hh = height(x, z);
+          if (!tuftOk(x, z, hh) || Math.random() < 0.3) continue;
+          const sc = rand(1.3, 2.8);
+          q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
+          p.set(x, hh + 0.02, z); s.set(sc, sc * rand(0.85, 1.3), sc);
+          m.compose(p, q, s); tufts.setMatrixAt(placed, m);
+          c.setHSL(0.24 + rand(-0.03, 0.03), 0.45, rand(0.65, 0.95)); tufts.setColorAt(placed, c);
+          placed++;
+        }
+      }
+      tufts.count = placed;
+      flushIm(tufts);
+    } else if (part === 'grama1' || part === 'grama2') {
+      const blN = Math.floor(bladeN * qMul);
+      const half = Math.floor(blN / 2);
+      const from = part === 'grama1' ? 0 : half, to = part === 'grama1' ? half : blN;
+      let bp = from;
+      for (let i = from; i < to; i++) {
+        const ang = Math.random() * 6.2832, rr = Math.sqrt(Math.random()) * 245;
+        const x = cx + Math.cos(ang) * rr, z = cz + Math.sin(ang) * rr;
         const hh = height(x, z);
-        if (!bladeOk(x, z, hh) || Math.random() < 0.28) continue;
+        if (!bladeOk(x, z, hh)) { continue; }
         const sc = rand(0.55, 1.2);
         q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
         p.set(x, hh + 0.015, z); s.set(sc, sc * rand(0.85, 1.3), sc);
@@ -918,28 +941,27 @@ function buildNature() {
         c.setHSL(0.27 + rand(-0.035, 0.035), 0.45, rand(0.6, 0.95)); blades.setColorAt(bp, c);
         bp++;
       }
-    }
-    blades.count = bp;
-    // flores
-    for (const fd of flowerDefs) {
-      const fN = Math.floor(fd.count * qMul);
-      for (let i = 0; i < fN; i++) {
-        const pos = posNear(fd.okFn);
-        if (!pos) { fd.im.setMatrixAt(i, zero); continue; }
-        const sc = rand(0.75, 1.35);
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
-        p.set(pos.x, pos.h, pos.z); s.set(sc, sc * rand(0.85, 1.3), sc);
-        m.compose(p, q, s); fd.im.setMatrixAt(i, m);
-        c.setHSL(fd.hue + rand(-0.035, 0.035), fd.sat + rand(-0.12, 0.12), fd.lit + rand(-0.14, 0.14));
-        fd.im.setColorAt(i, c);
+      for (let i = bp; i < to; i++) blades.setMatrixAt(i, zero);
+      if (part === 'grama2') blades.count = Math.max(bp, half);
+      flushIm(blades);
+    } else if (part === 'flores') {
+      for (const fd of flowerDefs) {
+        const fN = Math.floor(fd.count * qMul);
+        for (let i = 0; i < fN; i++) {
+          const pos = posNear(fd.okFn);
+          if (!pos) { fd.im.setMatrixAt(i, zero); continue; }
+          const sc = rand(0.75, 1.35);
+          q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
+          p.set(pos.x, pos.h, pos.z); s.set(sc, sc * rand(0.85, 1.3), sc);
+          m.compose(p, q, s); fd.im.setMatrixAt(i, m);
+          c.setHSL(fd.hue + rand(-0.035, 0.035), fd.sat + rand(-0.12, 0.12), fd.lit + rand(-0.14, 0.14));
+          fd.im.setColorAt(i, c);
+        }
+        fd.im.count = fN;
+        flushIm(fd.im);
       }
-      fd.im.count = fN;
     }
-    for (const im of [pines, broads, broadsL, bushes, rocks, tufts, blades].concat(flowerDefs.map(f => f.im))) {
-      im.instanceMatrix.needsUpdate = true;
-      if (im.instanceColor) im.instanceColor.needsUpdate = true;
-    }
-  };
+  }
   seedNature();
 }
 
@@ -2942,10 +2964,10 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   if (window.__andoraCapture) return;
   frameCount++; frameAccum += dt;
-  if (frameAccum > 4) {
+  if (frameAccum > 2.5) {
     const fps = frameCount / frameAccum;
     frameCount = 0; frameAccum = 0;
-    if (fps < 26 && qualityLevel > 0) {
+    if (fps < 30 && qualityLevel > 0) {
       qualityLevel--;
       if (qualityLevel === 1) {
         if (bloomPass) bloomPass.enabled = false;
@@ -2966,15 +2988,16 @@ function animate() {
   if (gameStarted && !menuMode && !dlgNpc && !cutActive) updateHero(dt);
   if (hero) {
     updateChunks(false);
-    if (seedNature && (Math.abs(hero.x - seedX) + Math.abs(hero.z - seedZ) > 70)) seedNature();
+    if (seedNature && seedQueue.length === 0 && (Math.abs(hero.x - seedX) + Math.abs(hero.z - seedZ) > 70)) seedNature();
   }
+  if (seedSlice && seedQueue && seedQueue.length) seedSlice(seedQueue.shift());
   if (hero) updateCamera(dt);
   windU.value = worldTime;
   if (hero && (menuMode || dlgNpc || (!gameStarted && !cutActive))) poseHuman(hero, { talk: !!dlgNpc, moving: false }, dt);
   // reflexo espelhado do cenario na agua (so perto do lago; some se o FPS cair)
   if (reflRT && reflCam && camera && water && renderer.setRenderTarget) {
     const nearLake = hero ? distTo(hero.x, hero.z, LAKE.x, LAKE.z) < LAKE.r + 170 : false;
-    if (nearLake && qualityLevel >= 1) {
+    if (nearLake && qualityLevel >= 1 && (frameCount % 2 === 0 || water.material.uniforms.uReflOn.value < 0.5)) {
       reflCam.position.copy(camera.position);
       reflCam.position.y = 2 * WATER_Y - camera.position.y;
       camera.getWorldDirection(_reflDir);
@@ -2998,7 +3021,7 @@ function animate() {
       renderer.setRenderTarget(null);
       renderer.shadowMap.enabled = shd;
       water.visible = true;
-    } else {
+    } else if (!nearLake || qualityLevel < 1) {
       water.material.uniforms.uReflOn.value = 0;
     }
   }
@@ -3007,7 +3030,7 @@ function animate() {
     if (Math.abs(camera.fov - tf) > 0.04) { camera.fov += (tf - camera.fov) * (1 - Math.exp(-3.2 * dt)); camera.updateProjectionMatrix(); }
   }
   updateSky();
-  if (Math.abs(hour - envHour) > 0.7) updateEnvironment(false);
+  if (Math.abs(hour - envHour) > 1.5) updateEnvironment(false);
   for (const fn of animatables) fn(t, dt);
   for (const hs of horseList) horseThink(hs, dt);
   for (const an of animalList) animalThink(an, dt);
@@ -3051,6 +3074,7 @@ function animate() {
     if (t - (animate._mm || 0) > 0.24) { animate._mm = t; drawMinimap(); }
   }
   ambTick(dt);
+  if (renderer.shadowMap && frameCount % (qualityLevel >= 2 ? 2 : 3) === 0) renderer.shadowMap.needsUpdate = true;
   if (composer) composer.render();
   else renderer.render(scene, camera);
 }
@@ -3070,7 +3094,8 @@ function boot() {
       '(ou clique no preview do servidor "Andora 3D") e jogue em tela cheia. ✨</p></div>';
     return;
   }
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, IS_TOUCH ? 1.8 : 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.35));
+  if (renderer.shadowMap) renderer.shadowMap.autoUpdate = false;
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
