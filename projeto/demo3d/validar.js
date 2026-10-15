@@ -50,7 +50,8 @@ const els = {};
 const doc = {
   getElementById: id => (els[id] = els[id] || fakeEl(id)),
   createElement: tag => fakeEl(tag),
-  querySelectorAll: () => []
+  querySelectorAll: () => [],
+  addEventListener: () => {}
 };
 global.document = doc;
 global.window = global;
@@ -65,6 +66,10 @@ global.requestAnimationFrame = cb => { rafCb = cb; };
 
 /* renderer falso */
 THREE.WebGLRenderer = function (opts) {
+  this.shadowMap = {};
+  this.setRenderTarget = () => {};
+  this.getRenderTarget = () => null;
+  this.clear = () => {};
   this.setPixelRatio = () => {};
   this.setSize = () => {};
   this.render = () => {};
