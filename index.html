@@ -1394,6 +1394,7 @@ const CHUNK = 100, CHUNK_SEGS = 18;
 const chunkMap = new Map();
 let terrainMatShared = null, chunkR = IS_TOUCH ? 5 : 7, lastChunkGX = 999999, lastChunkGZ = 999999;
 let seedX = 1e9, seedZ = 1e9, seedNature = null, seedQueue = [], seedSlice = null;
+const _sunProbe = new THREE.Vector3();
 let hero = null, horseList = [], npcList = [], animalList = [], pickupList = [], lanternList = [], clouds = [], birds = [];
 let windmillBlades = null;
 const animatables = [];
@@ -1521,11 +1522,12 @@ const texCloth = makeTexture(128, (x, s) => {
 });
 const texBlade = makeTexture(128, (x, s) => {
   x.clearRect(0, 0, s, s);
-  for (let i = 0; i < 30; i++) {
-    const bx = Math.random() * s, h = s * (0.4 + Math.random() * 0.55), w = 3 + Math.random() * 7;
-    const g1 = 120 + Math.floor(Math.random() * 110);
-    x.fillStyle = 'rgb(' + Math.floor(g1 * 0.52) + ',' + g1 + ',' + Math.floor(g1 * 0.42) + ')';
-    const bend = (Math.random() * 12 - 6);
+  for (let i = 0; i < 52; i++) {
+    const bx = Math.random() * s, h = s * (0.32 + Math.random() * 0.62), w = 2 + Math.random() * 5.5;
+    const g1 = 105 + Math.floor(Math.random() * 125);
+    const warm = Math.random() * 0.16;
+    x.fillStyle = 'rgb(' + Math.floor(g1 * (0.5 + warm)) + ',' + g1 + ',' + Math.floor(g1 * 0.38) + ')';
+    const bend = (Math.random() * 14 - 7);
     x.beginPath();
     x.moveTo(bx - w, s);
     x.quadraticCurveTo(bx - w * 0.15, s - h * 0.6, bx + bend, s - h);
@@ -1606,11 +1608,13 @@ function updateEnvironment(force) {
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null }, uTime: { value: 0 }, uVig: { value: 0.34 },
-    uGrain: { value: 0.028 }, uCA: { value: 0.0012 }, uExp: { value: 0.56 }
+    uGrain: { value: 0.028 }, uCA: { value: 0.0012 }, uExp: { value: 0.56 },
+    uSunUV: { value: new THREE.Vector2(0.5, 0.5) }, uSunVis: { value: 0 }, uSunColG: { value: new THREE.Color(0xffe9c0) }
   },
   vertexShader: 'varying vec2 vUv;\nvoid main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: [
     'uniform sampler2D tDiffuse; uniform float uTime; uniform float uVig; uniform float uGrain; uniform float uCA; uniform float uExp;',
+    'uniform vec2 uSunUV; uniform float uSunVis; uniform vec3 uSunColG;',
     'varying vec2 vUv;',
     'vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }',
     'void main(){',
@@ -1624,6 +1628,12 @@ const GradeShader = {
     '  float lum = dot(col, vec3(0.299, 0.587, 0.114));',
     '  col = mix(vec3(lum), col, 1.14);',
     '  col = mix(col, col * col * (3.0 - 2.0 * col), 0.22);',
+    '  vec2 sd2 = uv - uSunUV;',
+    '  float dsun = length(sd2);',
+    '  float glare = exp(-dsun * 6.0) * 0.38 + exp(-dsun * 18.0) * 0.85;',
+    '  col += uSunColG * glare * uSunVis;',
+    '  float streak = exp(-abs(sd2.y) * 42.0) * exp(-abs(sd2.x) * 2.2) * 0.3;',
+    '  col += uSunColG * streak * uSunVis;',
     '  col *= 1.0 - uVig * r2 * 1.5;',
     '  float g = fract(sin(dot(uv * 761.31 + uTime, vec2(12.9898, 78.233))) * 43758.5453);',
     '  col += (g - 0.5) * uGrain;',
@@ -1668,10 +1678,47 @@ function setupSky() {
       topColor: { value: new THREE.Color(0x2f6cc4) },
       bottomColor: { value: new THREE.Color(0xa8d4ec) },
       offset: { value: 28 },
-      exponent: { value: 0.72 }
+      exponent: { value: 0.72 },
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uSunCol: { value: new THREE.Color(0xffe9c0) },
+      uTime: { value: 0 },
+      uCloudAmt: { value: 0.52 }
     },
     vertexShader: 'varying vec3 vWP;\nvoid main(){\n vec4 wp = modelMatrix * vec4(position,1.0);\n vWP = wp.xyz;\n gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);\n}',
-    fragmentShader: 'uniform vec3 topColor;\nuniform vec3 bottomColor;\nuniform float offset;\nuniform float exponent;\nvarying vec3 vWP;\nvoid main(){\n float h = normalize(vWP + vec3(0.0, offset, 0.0)).y;\n gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);\n gl_FragColor.rgb = pow(gl_FragColor.rgb, vec3(0.4545));\n}',
+    fragmentShader: [
+      'uniform vec3 topColor; uniform vec3 bottomColor; uniform float offset; uniform float exponent;',
+      'uniform vec3 uSunDir; uniform vec3 uSunCol; uniform float uTime; uniform float uCloudAmt;',
+      'varying vec3 vWP;',
+      'float hash21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }',
+      'float vnoise2(vec2 p){',
+      '  vec2 i = floor(p), f = fract(p);',
+      '  vec2 u = f * f * (3.0 - 2.0 * f);',
+      '  float a = hash21(i), b = hash21(i + vec2(1.0, 0.0)), c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));',
+      '  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);',
+      '}',
+      'float fbm2(vec2 p){ float s = 0.0, a = 0.55; for (int k = 0; k < 4; k++){ s += a * vnoise2(p); p = p * 2.13 + 17.7; a *= 0.5; } return s; }',
+      'void main(){',
+      '  vec3 dir = normalize(vWP);',
+      '  float h = normalize(vWP + vec3(0.0, offset, 0.0)).y;',
+      '  vec3 col = mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0));',
+      '  float sd = max(dot(dir, normalize(uSunDir)), 0.0);',
+      '  float disc = pow(sd, 900.0) * 2.2;',
+      '  float halo = pow(sd, 22.0) * 0.5 + pow(sd, 5.0) * 0.16;',
+      '  col += uSunCol * (disc + halo);',
+      '  float horiz = smoothstep(0.02, 0.16, dir.y);',
+      '  vec2 cuv = dir.xz / max(dir.y, 0.12) * 1.35;',
+      '  cuv += vec2(uTime * 0.0045, uTime * 0.0017);',
+      '  float n1 = fbm2(cuv * 0.55);',
+      '  float n2 = fbm2(cuv * 1.4 + 40.0);',
+      '  float cov = smoothstep(0.52 - uCloudAmt * 0.22, 0.78 - uCloudAmt * 0.12, n1 * 0.72 + n2 * 0.28);',
+      '  cov *= horiz;',
+      '  float sunSide = 0.45 + 0.55 * pow(sd, 1.6);',
+      '  vec3 cloudCol = mix(bottomColor * 0.82, vec3(1.04, 1.02, 0.99) * (0.28 + 0.85 * sunSide), 0.78);',
+      '  cloudCol += uSunCol * pow(sd, 8.0) * 0.35;',
+      '  col = mix(col, cloudCol, cov * 0.88);',
+      '  gl_FragColor = vec4(col, 1.0);',
+      '}'
+    ].join('\n'),
     side: THREE.BackSide,
     depthWrite: false,
     fog: false
@@ -1694,20 +1741,7 @@ function setupSky() {
   sg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 2.1, transparent: true, opacity: 0, depthWrite: false, fog: false }));
   stars.renderOrder = -5; scene.add(stars);
-  // nuvens fofas (sprites de luz suave)
-  cloudMatG = new THREE.SpriteMaterial({ map: texPuff, color: 0xffffff, transparent: true, opacity: 0.82, depthWrite: false, fog: false });
-  for (let i = 0; i < 18; i++) {
-    const g = new THREE.Group();
-    for (let j = 0; j < 4; j++) {
-      const s = new THREE.Sprite(cloudMatG);
-      s.position.set(rand(-18, 18), rand(-3, 3), rand(-7, 7));
-      s.scale.set(rand(26, 46), rand(15, 24), 1);
-      g.add(s);
-    }
-    g.position.set(rand(-400, 400), rand(95, 165), rand(-400, 400));
-    g.renderOrder = -3;
-    clouds.push(g); scene.add(g);
-  }
+  // nuvens agora vivem no shader do ceu (mais reais e mais leves)
   // pólumen dourado flutuando (só de dia)
   const mg = new THREE.BufferGeometry();
   const mn = 140, mpos = new Float32Array(mn * 3);
@@ -1776,6 +1810,23 @@ function updateSky() {
     gradeEl.style.background = duskF > 0.18
       ? 'rgba(255,140,70,' + (0.11 * duskF).toFixed(3) + ')'
       : (dayF > 0.5 ? 'rgba(255,215,155,' + (0.07 * dayF).toFixed(3) + ')' : 'rgba(40,70,140,' + (0.1 * (1 - dayF)).toFixed(3) + ')');
+  }
+  {
+    const su = skyDome.material.uniforms;
+    if (su.uSunDir) {
+      su.uSunDir.value.copy(sunDir);
+      su.uSunCol.value.copy(sun.color).multiplyScalar(1.0 + duskF * 0.55);
+      su.uTime.value = worldTime;
+      su.uCloudAmt.value = 0.52 - 0.18 * (1 - dayF);
+    }
+    if (gradePass && camera) {
+      _sunProbe.copy(sunDir).multiplyScalar(300).add(camera.position);
+      _sunProbe.project(camera);
+      const vis = (_sunProbe.z < 1 && sunDir.y > -0.04) ? clamp(sunDir.y * 4 + 0.12, 0, 1) : 0;
+      gradePass.uniforms.uSunUV.value.set(_sunProbe.x * 0.5 + 0.5, _sunProbe.y * 0.5 + 0.5);
+      gradePass.uniforms.uSunVis.value = vis * 0.62;
+      gradePass.uniforms.uSunColG.value.copy(sun.color);
+    }
   }
   sunSprite.position.copy(sunDir).multiplyScalar(465);
   if (sunCore) { sunCore.position.copy(sunDir).multiplyScalar(458); sunCore.material.opacity = clamp(elev * 4, 0, 1); }
