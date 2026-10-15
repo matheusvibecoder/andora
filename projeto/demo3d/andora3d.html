@@ -1375,7 +1375,20 @@ let windowMats = [];
 let reflRT = null, reflCam = null;
 const windU = { value: 0 };
 const _reflDir = new THREE.Vector3(), _reflLook = new THREE.Vector3(), _reflTexMat = new THREE.Matrix4();
-let frameCount = 0, frameAccum = 0, qualityLevel = IS_TOUCH ? 1 : 2;
+let frameCount = 0, qualityLevel = IS_TOUCH ? 1 : 2, wdLast = (typeof performance !== 'undefined' ? performance.now() : Date.now()), wdFrames = 0, upGood = 0;
+function applyQuality() {
+  if (!renderer) return;
+  const q = qualityLevel;
+  if (bloomPass) bloomPass.enabled = q >= 2;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q >= 2 ? 1.35 : (q === 1 ? 1.15 : 1)));
+  if (motePts) motePts.visible = q >= 2;
+  if (leafPts) leafPts.visible = q >= 2;
+  if (sun) sun.castShadow = q >= 1;
+  if (cloudMatG) cloudMatG.opacity = q >= 2 ? 1 : 0.55;
+  if (water && water.material.uniforms.uReflOn && q < 1) water.material.uniforms.uReflOn.value = 0;
+  if (seedNature) seedNature();
+  updateChunks(true);
+}
 let terrain = null, water;
 const CHUNK = 100, CHUNK_SEGS = 18;
 const chunkMap = new Map();
@@ -1556,7 +1569,7 @@ function updateEnvironment(force) {
   try {
     if (!renderer || !THREE.PMREMGenerator) return;
     if (!envPMREM) envPMREM = new THREE.PMREMGenerator(renderer);
-    if (!force && Math.abs(hour - envHour) < 1.5) return;
+    if (!force && Math.abs(hour - envHour) < 2.5) return;
     envHour = hour;
     const c = document.createElement('canvas'); c.width = 256; c.height = 128;
     const x = c.getContext('2d');
@@ -1803,8 +1816,26 @@ function chunkBuild(cx, cz) {
   const mesh = new THREE.Mesh(geo, terrainMatShared);
   mesh.receiveShadow = true;
   mesh.userData.noShadow = true;
+  mesh.userData.hg = hs;
+  mesh.userData.hx = cx * CHUNK; mesh.userData.hz = cz * CHUNK;
   scene.add(mesh);
   chunkMap.set(key, mesh);
+}
+function sampleHeight(x, z) {
+  const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
+  const mesh = chunkMap.get(cx + ',' + cz);
+  if (mesh && mesh.userData.hg) {
+    const n = CHUNK_SEGS + 1, cell = CHUNK / CHUNK_SEGS;
+    const fx = clamp((x - mesh.userData.hx) / cell, 0, CHUNK_SEGS - 0.001);
+    const fz = clamp((z - mesh.userData.hz) / cell, 0, CHUNK_SEGS - 0.001);
+    const ix = Math.floor(fx), iz = Math.floor(fz);
+    const tx = fx - ix, tz = fz - iz;
+    const hg = mesh.userData.hg;
+    const h00 = hg[iz * n + ix], h10 = hg[iz * n + ix + 1];
+    const h01 = hg[(iz + 1) * n + ix], h11 = hg[(iz + 1) * n + ix + 1];
+    return (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz;
+  }
+  return height(x, z);
 }
 function chunkDispose(key) {
   const mesh = chunkMap.get(key);
@@ -1836,7 +1867,7 @@ function updateChunks(force) {
     }
   }
   missing.sort((a, b) => a[2] - b[2]);
-  const budget = force ? 48 : (moved ? 10 : 2);
+  const budget = force ? 48 : (moved ? 5 : 2);
   let built = 0;
   for (let i = 0; i < missing.length && built < budget; i++, built++) chunkBuild(missing[i][0], missing[i][1]);
   chunkPending = built >= budget && missing.length > built;
@@ -2100,7 +2131,7 @@ function buildNature() {
   };
   seedNature = function () {
     seedX = hero ? hero.x : 0; seedZ = hero ? hero.z : 195;
-    seedQueue = ['arvores', 'arbustos', 'tufos', 'grama1', 'grama2', 'flores'];
+    seedQueue = ['arvores', 'arbustos', 'tufos1', 'tufos2', 'grama1', 'grama2', 'flores'];
   };
   seedSlice = function (part) {
     const cx = seedX, cz = seedZ;
@@ -2109,7 +2140,7 @@ function buildNature() {
     const posNear = (ok) => {
       for (let t = 0; t < 18; t++) {
         const x = cx + rand(-R, R), z = cz + rand(-R, R);
-        const h = height(x, z);
+        const h = sampleHeight(x, z);
         if (ok(x, z, h)) return { x, z, h };
       }
       return null;
@@ -2159,13 +2190,14 @@ function buildNature() {
       }
       rocks.count = rN;
       flushIm(bushes); flushIm(rocks);
-    } else if (part === 'tufos') {
-      let placed = 0;
-      const tuN = Math.floor(tuftN * qMul);
-      for (let gx = cx - 300; gx <= cx + 300 && placed < tuN; gx += 9.5) {
+    } else if (part === 'tufos1' || part === 'tufos2') {
+      let placed = part === 'tufos1' ? 0 : Math.floor(tuftN * qMul * 0.5);
+      const tuN = part === 'tufos1' ? Math.floor(tuftN * qMul * 0.5) : Math.floor(tuftN * qMul);
+      const gx0 = part === 'tufos1' ? cx - 300 : cx, gx1 = part === 'tufos1' ? cx : cx + 300;
+      for (let gx = gx0; gx <= gx1 && placed < tuN; gx += 9.5) {
         for (let gz = cz - 300; gz <= cz + 300 && placed < tuN; gz += 9.5) {
           const x = gx + (Math.random() - 0.5) * 11, z = gz + (Math.random() - 0.5) * 11;
-          const hh = height(x, z);
+          const hh = sampleHeight(x, z);
           if (!tuftOk(x, z, hh) || Math.random() < 0.3) continue;
           const sc = rand(1.3, 2.8);
           q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
@@ -2185,7 +2217,7 @@ function buildNature() {
       for (let i = from; i < to; i++) {
         const ang = Math.random() * 6.2832, rr = Math.sqrt(Math.random()) * 245;
         const x = cx + Math.cos(ang) * rr, z = cz + Math.sin(ang) * rr;
-        const hh = height(x, z);
+        const hh = sampleHeight(x, z);
         if (!bladeOk(x, z, hh)) { continue; }
         const sc = rand(0.55, 1.2);
         q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
@@ -4216,25 +4248,19 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
   if (window.__andoraCapture) return;
-  frameCount++; frameAccum += dt;
-  if (frameAccum > 2.5) {
-    const fps = frameCount / frameAccum;
-    frameCount = 0; frameAccum = 0;
-    if (fps < 30 && qualityLevel > 0) {
-      qualityLevel--;
-      if (qualityLevel === 1) {
-        if (bloomPass) bloomPass.enabled = false;
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.15));
-        if (motePts) motePts.visible = false;
-        if (leafPts) leafPts.visible = false;
-        if (water && water.material.uniforms.uReflOn) water.material.uniforms.uReflOn.value = 0;
-      } else {
-        renderer.setPixelRatio(1);
-        if (sun) sun.castShadow = false;
-        if (cloudMatG) cloudMatG.opacity = 0.5;
-      }
-      if (seedNature) seedNature();
-      updateChunks(true);
+  frameCount++; wdFrames++;
+  const wdNow = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  if (wdNow - wdLast > 2200) {
+    const fps = wdFrames * 1000 / (wdNow - wdLast);
+    wdLast = wdNow; wdFrames = 0;
+    if (fps < 38 && qualityLevel > 0) {
+      qualityLevel--; upGood = 0;
+      applyQuality();
+    } else if (fps > 55 && qualityLevel < 2) {
+      upGood++;
+      if (upGood >= 3) { upGood = 0; qualityLevel++; applyQuality(); }
+    } else if (fps <= 55) {
+      upGood = 0;
     }
   }
   const t = worldTime;
@@ -4283,7 +4309,7 @@ function animate() {
     if (Math.abs(camera.fov - tf) > 0.04) { camera.fov += (tf - camera.fov) * (1 - Math.exp(-3.2 * dt)); camera.updateProjectionMatrix(); }
   }
   updateSky();
-  if (Math.abs(hour - envHour) > 1.5) updateEnvironment(false);
+  if (Math.abs(hour - envHour) > 2.5) updateEnvironment(false);
   for (const fn of animatables) fn(t, dt);
   for (const hs of horseList) horseThink(hs, dt);
   for (const an of animalList) animalThink(an, dt);
