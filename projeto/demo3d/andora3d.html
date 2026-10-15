@@ -1307,6 +1307,13 @@ function height(x, z) {
   const ld = distTo(x, z, LAKE.x, LAKE.z); h -= 26 * Math.exp(-(ld * ld) / 18050);
   const vd = distTo(x, z, VILLAGE.x, VILLAGE.z); const vf = Math.max(0, 1 - vd / 75); h = h * (1 - vf * 0.92) + 3 * vf * 0.92;
   const rd = distTo(x, z, RUINS.x, RUINS.z); const rf = Math.max(0, 1 - rd / 48); h = h * (1 - rf * 0.75) + 11 * rf * 0.75;
+  const far = clamp((Math.sqrt(x * x + z * z) - 520) / 320, 0, 1);
+  if (far > 0) {
+    const rm = vnoise(x * 0.0021 + 55, z * 0.0021 + 17);
+    const rmask = Math.max(0, (rm - 0.56) / 0.44);
+    const ridge2 = 1 - Math.abs(fbm(x * 0.0085 + 13, z * 0.0085 + 29) - 0.5) * 2;
+    h += far * rmask * rmask * (52 + 58 * ridge2 * ridge2);
+  }
   return h;
 }
 const ROADS = [
@@ -1344,7 +1351,7 @@ function terrainColor(x, z, h, out) {
     r = 0.72; g = 0.64; b = 0.48;
   } else {
     const t = clamp(n * 0.65 + n2 * 0.45, 0, 1);
-    r = lerp(0.185, 0.36, t) * 0.82; g = lerp(0.38, 0.6, t); b = lerp(0.135, 0.25, t);
+    r = lerp(0.19, 0.37, t) * 0.82; g = lerp(0.35, 0.55, t); b = lerp(0.12, 0.22, t);
     const warm = clamp((n2 - 0.55) * 2.2, 0, 1) * 0.2;
     r += warm; g += warm * 0.72;
     const dry = clamp((fbm(x * 0.012 + 60, z * 0.012 + 21) - 0.52) * 2.6, 0, 1) * 0.15;
@@ -1365,7 +1372,11 @@ let reflRT = null, reflCam = null;
 const windU = { value: 0 };
 const _reflDir = new THREE.Vector3(), _reflLook = new THREE.Vector3(), _reflTexMat = new THREE.Matrix4();
 let frameCount = 0, frameAccum = 0, qualityLevel = 2;
-let terrain, water;
+let terrain = null, water;
+const CHUNK = 100, CHUNK_SEGS = 18;
+const chunkMap = new Map();
+let terrainMatShared = null, chunkR = IS_TOUCH ? 5 : 7, lastChunkGX = 999999, lastChunkGZ = 999999;
+let seedX = 1e9, seedZ = 1e9, seedNature = null;
 let hero = null, horseList = [], npcList = [], animalList = [], pickupList = [], lanternList = [], clouds = [], birds = [];
 let windmillBlades = null;
 const animatables = [];
@@ -1730,11 +1741,11 @@ function updateSky() {
   const hx = hero ? hero.x : 0, hy = hero ? hero.y : 0, hz = hero ? hero.z : 0;
   sun.position.set(hx + sunDir.x * 320, hy + sunDir.y * 320, hz + sunDir.z * 320);
   sun.target.position.set(hx, hy, hz);
-  sun.intensity = Math.max(0, elev) * 0.78;
+  sun.intensity = Math.max(0, elev) * 0.92;
   moon.position.set(hx - sunDir.x * 320, hy - sunDir.y * 320, hz - sunDir.z * 320);
   moon.target.position.set(hx, hy, hz);
   moon.intensity = clamp(-elev, 0, 1) * 0.14 + 0.035;
-  hemi.intensity = 0.1 + dayF * 0.22;
+  hemi.intensity = 0.07 + dayF * 0.17;
   stars.material.opacity = clamp(1 - dayF * 1.9, 0, 0.9);
   const nightF = clamp(1 - dayF * 1.55, 0, 1);
   if (cloudMatG) cloudMatG.color.setRGB(Math.min(0.62 + dayF * 0.38 + duskF * 0.18, 1), Math.min(0.62 + dayF * 0.38 + duskF * 0.02, 1), Math.max(0.66 + dayF * 0.34 - duskF * 0.12, 0));
@@ -1759,10 +1770,12 @@ function updateSky() {
 }
 
 /* ---------------- terreno + água ---------------- */
-function buildTerrain() {
-  const seg = 140, size = 900;
-  const geo = new THREE.PlaneGeometry(size, size, seg, seg);
+function chunkBuild(cx, cz) {
+  const key = cx + ',' + cz;
+  if (chunkMap.has(key)) return;
+  const geo = new THREE.PlaneGeometry(CHUNK, CHUNK, CHUNK_SEGS, CHUNK_SEGS);
   geo.rotateX(-Math.PI / 2);
+  geo.translate(cx * CHUNK + CHUNK / 2, 0, cz * CHUNK + CHUNK / 2);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
   const col = new THREE.Color();
@@ -1775,9 +1788,50 @@ function buildTerrain() {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.computeVertexNormals();
-  terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, map: texClone(texDetail, 150, 150), bumpMap: texClone(texDetail, 150, 150), bumpScale: 0.6, roughness: 0.94, metalness: 0.0 }));
-  terrain.receiveShadow = true;
-  scene.add(terrain);
+  const mesh = new THREE.Mesh(geo, terrainMatShared);
+  mesh.receiveShadow = true;
+  mesh.userData.noShadow = true;
+  scene.add(mesh);
+  chunkMap.set(key, mesh);
+}
+function chunkDispose(key) {
+  const mesh = chunkMap.get(key);
+  if (!mesh) return;
+  scene.remove(mesh);
+  mesh.geometry.dispose();
+  chunkMap.delete(key);
+}
+let chunkPending = false;
+function updateChunks(force) {
+  if (!terrainMatShared) return;
+  const pcx = Math.floor((hero ? hero.x : 0) / CHUNK), pcz = Math.floor((hero ? hero.z : 195) / CHUNK);
+  const moved = pcx !== lastChunkGX || pcz !== lastChunkGZ;
+  if (!force && !moved && !chunkPending) return;
+  if (moved) { lastChunkGX = pcx; lastChunkGZ = pcz; }
+  const R = qualityLevel <= 0 ? 4 : (qualityLevel === 1 ? 5 : chunkR);
+  if (moved || force) {
+    for (const [key] of chunkMap) {
+      const kp = key.split(','); const cx = +kp[0], cz = +kp[1];
+      if (Math.abs(cx - pcx) > R + 1 || Math.abs(cz - pcz) > R + 1) chunkDispose(key);
+    }
+  }
+  const missing = [];
+  for (let dz = -R; dz <= R; dz++) {
+    for (let dx = -R; dx <= R; dx++) {
+      if (dx * dx + dz * dz > (R + 0.45) * (R + 0.45)) continue;
+      const cx = pcx + dx, cz = pcz + dz;
+      if (!chunkMap.has(cx + ',' + cz)) missing.push([cx, cz, dx * dx + dz * dz]);
+    }
+  }
+  missing.sort((a, b) => a[2] - b[2]);
+  const budget = force ? 320 : (moved ? 22 : 6);
+  let built = 0;
+  for (let i = 0; i < missing.length && built < budget; i++, built++) chunkBuild(missing[i][0], missing[i][1]);
+  chunkPending = built >= budget && missing.length > built;
+}
+function buildTerrain() {
+  terrainMatShared = new THREE.MeshStandardMaterial({ vertexColors: true, map: texClone(texDetail, 17, 17), bumpMap: texClone(texDetail, 17, 17), bumpScale: 0.6, roughness: 0.94, metalness: 0.0 });
+  updateChunks(true);
   // água do lago — ondas, fresnel, espuma na margem e brilho do sol
   const wgeo = new THREE.CircleGeometry(LAKE.r + 6, 72);
   wgeo.rotateX(-Math.PI / 2);
@@ -1917,55 +1971,20 @@ function buildNature() {
   const pines = new THREE.InstancedMesh(pineGeoM, treeMat, N);
   const broads = new THREE.InstancedMesh(broadCoreM, treeMat, N);
   const broadsL = new THREE.InstancedMesh(broadLeafM, leafMat, N);
-  let ip = 0, ib = 0;
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
   const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-  for (let i = 0; i < N; i++) {
-    const inForest = Math.random() < 0.62;
-    const pos = inForest ? scatterPos((x, z, h) => {
-      const d = distTo(x, z, FOREST.x, FOREST.z);
-      return d < 155 && h > -1.8 && h < 34 && roadFactor(x, z) < 0.25;
-    }) : scatterPos((x, z, h) => {
-      return h > -1.8 && h < 38 && roadFactor(x, z) < 0.2 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 95 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 12 && distTo(x, z, RUINS.x, RUINS.z) > 40;
-    });
-    if (!pos) continue;
-    const sc = rand(0.8, 1.55), rot = rand(0, Math.PI * 2);
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rot);
-    p.set(pos.x, pos.h, pos.z); s.set(sc, sc * rand(0.9, 1.2), sc);
-    m.compose(p, q, s);
-    const isPine = pos.h > 15 || Math.random() < 0.45;
-    if (isPine) {
-      pines.setMatrixAt(ip, m); c.setHSL(0.325 + rand(-0.035, 0.035), 0.52, rand(0.62, 0.95)); pines.setColorAt(ip, c); ip++;
-    } else {
-      broads.setMatrixAt(ib, m); c.setHSL(0.255 + rand(-0.035, 0.035), 0.52, rand(0.66, 1.02)); broads.setColorAt(ib, c);
-      broadsL.setMatrixAt(ib, m); broadsL.setColorAt(ib, c); ib++;
-    }
-  }
-  pines.count = ip; broads.count = ib; broadsL.count = ib;
-  pines.instanceMatrix.needsUpdate = true; broads.instanceMatrix.needsUpdate = true; broadsL.instanceMatrix.needsUpdate = true;
-  if (pines.instanceColor) pines.instanceColor.needsUpdate = true;
-  if (broads.instanceColor) broads.instanceColor.needsUpdate = true;
-  if (broadsL.instanceColor) broadsL.instanceColor.needsUpdate = true;
   pines.castShadow = true; broads.castShadow = true; broadsL.castShadow = true;
   scene.add(pines, broads, broadsL);
+  const treeForestOk = (x, z, h) => fbm(x * 0.0055 + 3, z * 0.0055 + 8) > 0.53 && h > -1.8 && h < 36 && roadFactor(x, z) < 0.28;
+  const treeOpenOk = (x, z, h) => h > -1.8 && h < 40 && roadFactor(x, z) < 0.22 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 55 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 12 && distTo(x, z, RUINS.x, RUINS.z) > 30;
   // arbustos
   const bushGeo = new THREE.IcosahedronGeometry(1.15, 1);
   const bushMat = new THREE.MeshStandardMaterial({});
   addWind(bushMat, 0.05);
-  const bushes = new THREE.InstancedMesh(bushGeo, bushMat, 110);
-  for (let i = 0; i < 110; i++) {
-    const pos = scatterPos((x, z, h) => h > -2.4 && h < 30 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 6);
-    if (!pos) { bushes.setMatrixAt(i, zero); continue; }
-    const sc = rand(0.6, 1.5);
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
-    p.set(pos.x, pos.h + 0.55 * sc, pos.z); s.set(sc, sc * 0.75, sc);
-    m.compose(p, q, s); bushes.setMatrixAt(i, m);
-    c.setHSL(0.28 + rand(-0.03, 0.03), 0.45, rand(0.32, 0.48)); bushes.setColorAt(i, c);
-  }
+  const bushes = new THREE.InstancedMesh(bushGeo, bushMat, 130);
   bushes.castShadow = true;
-  bushes.instanceMatrix.needsUpdate = true;
-  if (bushes.instanceColor) bushes.instanceColor.needsUpdate = true;
   scene.add(bushes);
+  const bushOk = (x, z, h) => h > -2.4 && h < 32 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 6;
   // ---- campos de flores: lupins, papoulas e margaridas (como nas pinturas) ----
   const lupineGeoM = mergeParts([
     { geo: new THREE.CylinderGeometry(0.022, 0.032, 0.66, 5), matrix: new THREE.Matrix4().makeTranslation(0, 0.33, 0), color: new THREE.Color(0x3f7a34) },
@@ -1984,21 +2003,12 @@ function buildNature() {
   addWind(flowerMat, 0.08);
   const flowerOk = (x, z, h) => h > -1.6 && h < 22 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 6 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 9;
   const meadowOk = (x, z, h) => h > -1.6 && h < 22 && (roadFactor(x, z) > 0.015 || distTo(x, z, 0, 195) < 130) && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 6 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 11;
+  const flowerDefs = [];
   function scatterFlowers(geo, count, okFn, hue, sat, lit) {
     const im = new THREE.InstancedMesh(geo, flowerMat, count);
-    for (let i = 0; i < count; i++) {
-      const pos = scatterPos(okFn);
-      if (!pos) { im.setMatrixAt(i, zero); continue; }
-      const sc = rand(0.75, 1.35);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
-      p.set(pos.x, pos.h, pos.z); s.set(sc, sc * rand(0.85, 1.3), sc);
-      m.compose(p, q, s); im.setMatrixAt(i, m);
-      c.setHSL(hue + rand(-0.035, 0.035), sat + rand(-0.12, 0.12), lit + rand(-0.14, 0.14));
-      im.setColorAt(i, c);
-    }
-    im.instanceMatrix.needsUpdate = true;
-    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.userData.noShadow = true;
     scene.add(im);
+    flowerDefs.push({ im, count, okFn, hue, sat, lit });
     return im;
   }
   const flMul = IS_TOUCH ? 0.55 : 1;
@@ -2038,30 +2048,7 @@ function buildNature() {
   const tuftN = IS_TOUCH ? 2600 : 6000;
   const tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, tuftN);
   const tuftOk = (x, z, h) => h > -2.6 && h < 26 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 4 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 8;
-  let placed = 0;
-  for (let gx = -425; gx <= 425 && placed < tuftN; gx += 8.5) {
-    for (let gz = -425; gz <= 425 && placed < tuftN; gz += 8.5) {
-      const x = gx + (Math.random() - 0.5) * 12, z = gz + (Math.random() - 0.5) * 12;
-      const hh = height(x, z);
-      if (!tuftOk(x, z, hh) || Math.random() < 0.3) continue;
-      const n = 1 + Math.floor(Math.random() * 2);
-      for (let k = 0; k < n && placed < tuftN; k++) {
-        const jx = x + (Math.random() - 0.5) * 3.5, jz = z + (Math.random() - 0.5) * 3.5;
-        const hj = height(jx, jz);
-        if (!tuftOk(jx, jz, hj)) continue;
-        const sc = rand(1.3, 2.8);
-        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
-        p.set(jx, hj + 0.02, jz); s.set(sc, sc * rand(0.85, 1.3), sc);
-        m.compose(p, q, s); tufts.setMatrixAt(placed, m);
-        c.setHSL(0.24 + rand(-0.03, 0.03), 0.5, rand(0.75, 1.1)); tufts.setColorAt(placed, c);
-        placed++;
-      }
-    }
-  }
-  for (let i = placed; i < tuftN; i++) tufts.setMatrixAt(i, zero);
   tufts.userData.noShadow = true;
-  tufts.instanceMatrix.needsUpdate = true;
-  if (tufts.instanceColor) tufts.instanceColor.needsUpdate = true;
   scene.add(tufts);
   // laminas de grama 3D — milhares, curvadas, com gradiente de cor
   const bladeGeo = new THREE.PlaneGeometry(0.085, 0.55, 1, 3);
@@ -2086,53 +2073,127 @@ function buildNature() {
   const bladeN = IS_TOUCH ? 3200 : 9500;
   const blades = new THREE.InstancedMesh(bladeGeo, bladeMat, bladeN);
   const bladeOk = (x, z, h) => h > -2.4 && h < 30 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 3 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 6 && roadFactor(x, z) < 0.45;
-  let bp = 0;
-  for (let gx = -300; gx <= 300 && bp < bladeN; gx += 4.2) {
-    for (let gz = -300; gz <= 300 && bp < bladeN; gz += 4.2) {
-      const x = gx + (Math.random() - 0.5) * 5, z = gz + (Math.random() - 0.5) * 5;
-      const hh = height(x, z);
-      if (!bladeOk(x, z, hh) || Math.random() < 0.28) continue;
-      const sc = rand(0.55, 1.2);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
-      p.set(x, hh + 0.015, z); s.set(sc, sc * rand(0.85, 1.3), sc);
-      m.compose(p, q, s); blades.setMatrixAt(bp, m);
-      c.setHSL(0.27 + rand(-0.035, 0.035), 0.5, rand(0.7, 1.15)); blades.setColorAt(bp, c);
-      bp++;
-    }
-  }
-  for (let i = bp; i < bladeN; i++) blades.setMatrixAt(i, zero);
   blades.userData.noShadow = true;
-  blades.instanceMatrix.needsUpdate = true;
-  if (blades.instanceColor) blades.instanceColor.needsUpdate = true;
   scene.add(blades);
   // pedras
   const rockGeo = roughen(new THREE.IcosahedronGeometry(1.5, 0), 0.32, 1, 1, 1);
-  const rocks = new THREE.InstancedMesh(rockGeo, new THREE.MeshStandardMaterial({ color: 0x8a8478 }), 130);
-  for (let i = 0; i < 130; i++) {
-    const pos = scatterPos((x, z, h) => h > -1.5 && h < 62 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 40);
-    if (!pos) { rocks.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0)); continue; }
-    const sc = rand(0.5, 2.2);
-    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
-    p.set(pos.x, pos.h + 0.5 * sc, pos.z); s.set(sc, sc * rand(0.55, 0.9), sc);
-    m.compose(p, q, s); rocks.setMatrixAt(i, m);
-  }
-  rocks.instanceMatrix.needsUpdate = true; rocks.castShadow = true; scene.add(rocks);
-  // flores
-  const flGeo = new THREE.SphereGeometry(0.22, 5, 4);
-  const flMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-  const fl = new THREE.InstancedMesh(flGeo, flMat, 650);
-  for (let i = 0; i < 650; i++) {
-    const pos = scatterPos((x, z, h) => h > -2.4 && h < 26 && roadFactor(x, z) < 0.3 && distTo(x, z, LAKE.x, LAKE.z) > LAKE.r + 4);
-    if (!pos) { fl.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0)); continue; }
-    p.set(pos.x, pos.h + 0.22, pos.z); s.set(1, 1, 1); q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0);
-    m.compose(p, q, s); fl.setMatrixAt(i, m);
-    const hue = [0.0, 0.12, 0.75, 0.58, 0.88][i % 5];
-    c.setHSL(hue, 0.72, 0.62); fl.setColorAt(i, c);
-  }
-  fl.userData.noShadow = true;
-  fl.instanceMatrix.needsUpdate = true;
-  if (fl.instanceColor) fl.instanceColor.needsUpdate = true;
-  scene.add(fl);
+  const rocks = new THREE.InstancedMesh(rockGeo, new THREE.MeshStandardMaterial({ color: 0x8a8478 }), 140);
+  rocks.castShadow = true; scene.add(rocks);
+  const rockOk = (x, z, h) => h > -1.5 && h < 62 && distTo(x, z, VILLAGE.x, VILLAGE.z) > 25;
+
+  // ---- re-semeio: pools seguem o jogador (mundo infinito, draw calls constantes) ----
+  seedNature = function () {
+    const cx = hero ? hero.x : 0, cz = hero ? hero.z : 195;
+    seedX = cx; seedZ = cz;
+    const R = 290;
+    const qMul = qualityLevel >= 2 ? 1 : (qualityLevel === 1 ? 0.55 : 0.3);
+    const posNear = (ok) => {
+      for (let t = 0; t < 22; t++) {
+        const x = cx + rand(-R, R), z = cz + rand(-R, R);
+        const h = height(x, z);
+        if (ok(x, z, h)) return { x, z, h };
+      }
+      return null;
+    };
+    // arvores
+    let ip = 0, ib = 0;
+    const tN = Math.floor(N * qMul);
+    for (let i = 0; i < tN; i++) {
+      const pos = posNear(Math.random() < 0.62 ? treeForestOk : treeOpenOk);
+      if (!pos) continue;
+      const sc = rand(0.8, 1.55);
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, Math.PI * 2));
+      p.set(pos.x, pos.h, pos.z); s.set(sc, sc * rand(0.9, 1.2), sc);
+      m.compose(p, q, s);
+      const isPine = pos.h > 15 || Math.random() < 0.45;
+      if (isPine) {
+        pines.setMatrixAt(ip, m); c.setHSL(0.325 + rand(-0.035, 0.035), 0.44, rand(0.55, 0.82)); pines.setColorAt(ip, c); ip++;
+      } else {
+        broads.setMatrixAt(ib, m); c.setHSL(0.255 + rand(-0.035, 0.035), 0.44, rand(0.58, 0.88)); broads.setColorAt(ib, c);
+        broadsL.setMatrixAt(ib, m); broadsL.setColorAt(ib, c); ib++;
+      }
+    }
+    for (let i = ip; i < N; i++) pines.setMatrixAt(i, zero);
+    for (let i = ib; i < N; i++) { broads.setMatrixAt(i, zero); broadsL.setMatrixAt(i, zero); }
+    pines.count = ip; broads.count = ib; broadsL.count = ib;
+    // arbustos
+    const bN = Math.floor(130 * qMul);
+    for (let i = 0; i < bN; i++) {
+      const pos = posNear(bushOk);
+      if (!pos) { bushes.setMatrixAt(i, zero); continue; }
+      const sc = rand(0.6, 1.5);
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
+      p.set(pos.x, pos.h + 0.55 * sc, pos.z); s.set(sc, sc * 0.75, sc);
+      m.compose(p, q, s); bushes.setMatrixAt(i, m);
+      c.setHSL(0.28 + rand(-0.03, 0.03), 0.4, rand(0.3, 0.44)); bushes.setColorAt(i, c);
+    }
+    bushes.count = bN;
+    // pedras
+    const rN = Math.floor(140 * qMul);
+    for (let i = 0; i < rN; i++) {
+      const pos = posNear(rockOk);
+      if (!pos) { rocks.setMatrixAt(i, zero); continue; }
+      const sc = rand(0.5, 2.2);
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
+      p.set(pos.x, pos.h + 0.5 * sc, pos.z); s.set(sc, sc * rand(0.55, 0.9), sc);
+      m.compose(p, q, s); rocks.setMatrixAt(i, m);
+    }
+    rocks.count = rN;
+    // tufos
+    let placed = 0;
+    const tuN = Math.floor(tuftN * qMul);
+    for (let gx = cx - 320; gx <= cx + 320 && placed < tuN; gx += 9.5) {
+      for (let gz = cz - 320; gz <= cz + 320 && placed < tuN; gz += 9.5) {
+        const x = gx + (Math.random() - 0.5) * 11, z = gz + (Math.random() - 0.5) * 11;
+        const hh = height(x, z);
+        if (!tuftOk(x, z, hh) || Math.random() < 0.3) continue;
+        const sc = rand(1.3, 2.8);
+        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
+        p.set(x, hh + 0.02, z); s.set(sc, sc * rand(0.85, 1.3), sc);
+        m.compose(p, q, s); tufts.setMatrixAt(placed, m);
+        c.setHSL(0.24 + rand(-0.03, 0.03), 0.45, rand(0.65, 0.95)); tufts.setColorAt(placed, c);
+        placed++;
+      }
+    }
+    tufts.count = placed;
+    // laminas de grama
+    let bp = 0;
+    const blN = Math.floor(bladeN * qMul);
+    for (let gx = cx - 270; gx <= cx + 270 && bp < blN; gx += 4.6) {
+      for (let gz = cz - 270; gz <= cz + 270 && bp < blN; gz += 4.6) {
+        const x = gx + (Math.random() - 0.5) * 5, z = gz + (Math.random() - 0.5) * 5;
+        const hh = height(x, z);
+        if (!bladeOk(x, z, hh) || Math.random() < 0.28) continue;
+        const sc = rand(0.55, 1.2);
+        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
+        p.set(x, hh + 0.015, z); s.set(sc, sc * rand(0.85, 1.3), sc);
+        m.compose(p, q, s); blades.setMatrixAt(bp, m);
+        c.setHSL(0.27 + rand(-0.035, 0.035), 0.45, rand(0.6, 0.95)); blades.setColorAt(bp, c);
+        bp++;
+      }
+    }
+    blades.count = bp;
+    // flores
+    for (const fd of flowerDefs) {
+      const fN = Math.floor(fd.count * qMul);
+      for (let i = 0; i < fN; i++) {
+        const pos = posNear(fd.okFn);
+        if (!pos) { fd.im.setMatrixAt(i, zero); continue; }
+        const sc = rand(0.75, 1.35);
+        q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand(0, 6.28));
+        p.set(pos.x, pos.h, pos.z); s.set(sc, sc * rand(0.85, 1.3), sc);
+        m.compose(p, q, s); fd.im.setMatrixAt(i, m);
+        c.setHSL(fd.hue + rand(-0.035, 0.035), fd.sat + rand(-0.12, 0.12), fd.lit + rand(-0.14, 0.14));
+        fd.im.setColorAt(i, c);
+      }
+      fd.im.count = fN;
+    }
+    for (const im of [pines, broads, broadsL, bushes, rocks, tufts, blades].concat(flowerDefs.map(f => f.im))) {
+      im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    }
+  };
+  seedNature();
 }
 
 /* ---------------- construções ---------------- */
@@ -4150,10 +4211,16 @@ function animate() {
         if (sun) sun.castShadow = false;
         if (cloudMatG) cloudMatG.opacity = 0.5;
       }
+      if (seedNature) seedNature();
+      updateChunks(true);
     }
   }
   const t = worldTime;
   if (gameStarted && !menuMode && !dlgNpc && !cutActive) updateHero(dt);
+  if (hero) {
+    updateChunks(false);
+    if (seedNature && (Math.abs(hero.x - seedX) + Math.abs(hero.z - seedZ) > 70)) seedNature();
+  }
   if (hero) updateCamera(dt);
   windU.value = worldTime;
   if (hero && (menuMode || dlgNpc || (!gameStarted && !cutActive))) poseHuman(hero, { talk: !!dlgNpc, moving: false }, dt);
@@ -4264,7 +4331,7 @@ function boot() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0xbfe2f2, 0.00112);
+  scene.fog = new THREE.FogExp2(0xbfe2f2, 0.0019);
   camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 1200);
   camera.position.set(0, 12, 180);
   clock = new THREE.Clock();
