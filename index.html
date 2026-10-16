@@ -1327,7 +1327,7 @@ function height(x, z) {
   const ridge = 1 - Math.abs(fbm(x * 0.011 + 3, z * 0.011 + 9) - 0.5) * 2;
   h += (72 + 34 * ridge * ridge) * mMask;
   const md2 = distTo(x, z, -160, -380); h += 52 * Math.exp(-(md2 * md2) / 16200);
-  const ld = distTo(x, z, LAKE.x, LAKE.z); h -= 26 * Math.exp(-(ld * ld) / 18050);
+  const ld = distTo(x, z, LAKE.x, LAKE.z); h -= 34 * Math.exp(-(ld * ld) / 22000);
   const vd = distTo(x, z, VILLAGE.x, VILLAGE.z); const vf = Math.max(0, 1 - vd / 75); h = h * (1 - vf * 0.92) + 3 * vf * 0.92;
   const rd = distTo(x, z, RUINS.x, RUINS.z); const rf = Math.max(0, 1 - rd / 48); h = h * (1 - rf * 0.75) + 11 * rf * 0.75;
   const far = clamp((Math.sqrt(x * x + z * z) - 520) / 320, 0, 1);
@@ -1374,11 +1374,11 @@ function terrainColor(x, z, h, out, slopeIn) {
     const t = clamp(clamp((h - 26) / 22, 0, 1) * 0.75 + clamp(slope - 0.85, 0, 0.6) * 0.7, 0, 1);
     const stri = (fbm(x * 0.06 + 3, z * 0.06 + 77) - 0.5) * 0.14;
     r = lerp(0.29, 0.5, t) + stri; g = lerp(0.27, 0.45, t) + stri; b = lerp(0.25, 0.41, t) + stri * 0.8;
-  } else if (h < WATER_Y + 1.8 && distTo(x, z, LAKE.x, LAKE.z) < LAKE.r + 46) {
+  } else if (h < WATER_Y + 1.1 && distTo(x, z, LAKE.x, LAKE.z) < LAKE.r + 125) {
     r = 0.72; g = 0.64; b = 0.48;
   } else {
     const t = clamp(n * 0.65 + n2 * 0.45, 0, 1);
-    r = lerp(0.19, 0.37, t) * 0.82; g = lerp(0.35, 0.55, t); b = lerp(0.12, 0.22, t);
+    r = lerp(0.17, 0.335, t) * 0.8; g = lerp(0.3, 0.5, t); b = lerp(0.1, 0.195, t);
     const warm = clamp((n2 - 0.55) * 2.2, 0, 1) * 0.2;
     r += warm; g += warm * 0.72;
     const dry = clamp((fbm(x * 0.012 + 60, z * 0.012 + 21) - 0.52) * 2.6, 0, 1) * 0.15;
@@ -1417,7 +1417,7 @@ const CHUNK = 100, CHUNK_SEGS = 18;
 const chunkMap = new Map();
 let terrainMatShared = null, chunkR = IS_TOUCH ? 5 : 7, lastChunkGX = 999999, lastChunkGZ = 999999;
 let seedX = 1e9, seedZ = 1e9, seedNature = null, seedQueue = [], seedSlice = null;
-const _sunProbe = new THREE.Vector3();
+const _sunProbe = new THREE.Vector3(), _sunProbe2 = new THREE.Vector3();
 let hero = null, horseList = [], npcList = [], animalList = [], pickupList = [], lanternList = [], clouds = [], birds = [];
 let windmillBlades = null;
 const animatables = [];
@@ -1698,6 +1698,10 @@ const GradeShader = {
     '  float lum = dot(col, vec3(0.299, 0.587, 0.114));',
     '  col = mix(vec3(lum), col, 1.14);',
     '  col = mix(col, col * col * (3.0 - 2.0 * col), 0.22);',
+    '  float lum2 = dot(col, vec3(0.299, 0.587, 0.114));',
+    '  col += vec3(0.032, 0.01, -0.028) * (lum2 * lum2);',
+    '  col += vec3(-0.018, -0.004, 0.032) * ((1.0 - lum2) * (1.0 - lum2));',
+    '  col = mix(vec3(lum2), col, 1.05);',
     '  vec2 sd2 = uv - uSunUV;',
     '  float dsun = length(sd2);',
     '  float glare = exp(-dsun * 6.0) * 0.38 + exp(-dsun * 18.0) * 0.85;',
@@ -1802,6 +1806,7 @@ function setupSky() {
   });
   skyDome = new THREE.Mesh(new THREE.SphereGeometry(520, 24, 12), skyMat);
   skyDome.renderOrder = -10;
+  skyDome.frustumCulled = false;
   scene.add(skyDome);
   sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffe9b0, transparent: true, opacity: 0.95, depthWrite: false, fog: false }));
   sunSprite.scale.set(110, 110, 1); sunSprite.renderOrder = -4; scene.add(sunSprite);
@@ -1930,10 +1935,13 @@ function updateSky() {
       gradePass.uniforms.uSunColG.value.copy(sun.color);
     }
   }
-  sunSprite.position.copy(sunDir).multiplyScalar(465);
-  if (sunCore) { sunCore.position.copy(sunDir).multiplyScalar(458); sunCore.material.opacity = clamp(elev * 4, 0, 1); }
+  const camP = camera ? camera.position : _sunProbe.set(0, 0, 0);
+  skyDome.position.copy(camP);
+  if (stars) stars.position.copy(camP);
+  sunSprite.position.copy(camP).add(_sunProbe2.copy(sunDir).multiplyScalar(465));
+  if (sunCore) { sunCore.position.copy(camP).add(_sunProbe2.copy(sunDir).multiplyScalar(458)); sunCore.material.opacity = clamp(elev * 4, 0, 1); }
   sun.color.copy(cSunWarm).lerp(cSunNoon, dayF).lerp(cSunDusk, duskF * 0.85);
-  moonSprite.position.copy(sunSprite.position).multiplyScalar(-1);
+  moonSprite.position.copy(camP).add(_sunProbe2.copy(sunDir).multiplyScalar(-465));
   sunSprite.material.opacity = clamp(elev * 3, 0, 1) * 0.95;
   moonSprite.material.opacity = clamp(-elev * 2.2, 0, 1) * 0.75;
   return dayF;
@@ -2036,7 +2044,23 @@ function buildTerrain() {
   };
   updateChunks(true);
   // água do lago — ondas, fresnel, espuma na margem e brilho do sol
-  const wgeo = new THREE.CircleGeometry(LAKE.r + 6, 72);
+  function makeBathymetry(reach) {
+    const S = 192, cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const cx2 = cv.getContext('2d'), img = cx2.createImageData(S, S);
+    for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+      const x = LAKE.x + (i / (S - 1) - 0.5) * 2 * reach, z = LAKE.z + (j / (S - 1) - 0.5) * 2 * reach;
+      const v = Math.max(0, Math.min(255, Math.round((height(x, z) + 40) / 80 * 255)));
+      const k = (j * S + i) * 4; img.data[k] = v; img.data[k + 1] = v; img.data[k + 2] = v; img.data[k + 3] = 255;
+    }
+    cx2.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(cv);
+    t.flipY = false;
+    t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
+    return t;
+  }
+  const BATH_REACH = LAKE.r + 150;
+  const bathTex = makeBathymetry(BATH_REACH);
+  const wgeo = new THREE.CircleGeometry(LAKE.r + 130, 112);
   wgeo.rotateX(-Math.PI / 2);
   const wu = {
     uTime: { value: 0 },
@@ -2049,7 +2073,13 @@ function buildTerrain() {
     uReflOn: { value: 0 },
     uTexMat: { value: new THREE.Matrix4() },
     uCenter: { value: new THREE.Vector2(LAKE.x, LAKE.z) },
-    uRadius: { value: LAKE.r + 6 },
+    uRadius: { value: LAKE.r + 130 },
+    uFadeR: { value: LAKE.r + 122 },
+    uShore0: { value: LAKE.r + 26 },
+    uShore1: { value: LAKE.r + 52 },
+    uBath: { value: bathTex },
+    uBathC: { value: new THREE.Vector2(LAKE.x, LAKE.z) },
+    uBathR: { value: BATH_REACH },
     fogColor: { value: new THREE.Color(0xa8d4ec) },
     fogDensity: { value: 0.00115 }
   };
@@ -2057,7 +2087,7 @@ function buildTerrain() {
     uniforms: wu,
     transparent: true,
     vertexShader: 'uniform float uTime;\nuniform mat4 uTexMat;\nvarying vec3 vWp; varying vec3 vV; varying vec3 vN; varying vec4 vRefC;\nvoid main(){\n vec4 wp = modelMatrix * vec4(position, 1.0);\n vRefC = uTexMat * vec4(wp.xyz, 1.0);\n float w1 = sin(wp.x * 0.35 + uTime * 1.1) * cos(wp.z * 0.42 + uTime * 0.8);\n float w2 = sin(wp.x * 0.62 - uTime * 1.3) * sin(wp.z * 0.55 + uTime * 0.6);\n wp.y += w1 * 0.12 + w2 * 0.07;\n float dx = 0.35 * cos(wp.x * 0.35 + uTime * 1.1) * cos(wp.z * 0.42 + uTime * 0.8) * 0.12 + 0.62 * cos(wp.x * 0.62 - uTime * 1.3) * sin(wp.z * 0.55 + uTime * 0.6) * 0.07;\n float dz = -0.42 * sin(wp.x * 0.35 + uTime * 1.1) * sin(wp.z * 0.42 + uTime * 0.8) * 0.12 + 0.55 * sin(wp.x * 0.62 - uTime * 1.3) * cos(wp.z * 0.55 + uTime * 0.6) * 0.07;\n vN = normalize(vec3(-dx * 3.5, 1.0, -dz * 3.5));\n vWp = wp.xyz;\n vec4 mv = viewMatrix * wp;\n vV = -mv.xyz;\n gl_Position = projectionMatrix * mv;\n}',
-    fragmentShader: 'uniform float uTime;\nuniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uSunDir; uniform vec3 uSunCol;\nuniform vec2 uCenter; uniform float uRadius;\nuniform vec3 fogColor; uniform float fogDensity;\nuniform sampler2D uRefl; uniform float uReflOn;\nvarying vec3 vWp; varying vec3 vV; varying vec3 vN; varying vec4 vRefC;\nvoid main(){\n vec3 N = normalize(vN); vec3 V = normalize(vV);\n float fres = pow(1.0 - max(dot(N, V), 0.0), 2.1);\n float ripple = N.x * 0.5 + N.z * 0.45;\n vec3 col = mix(uDeep, uShallow, clamp(0.3 + ripple * 1.4, 0.0, 1.0));\n vec3 reflC = uSky;\n if (uReflOn > 0.5) {\n  vec2 ruv = vRefC.xy / max(vRefC.w, 0.001) + N.xz * 0.055;\n  reflC = texture2D(uRefl, clamp(ruv, 0.001, 0.999)).rgb;\n }\n col = mix(col, reflC, clamp(fres * 0.85 + ripple * 0.22 + 0.2, 0.0, 0.85));\n vec3 L = normalize(uSunDir);\n vec3 H = normalize(L + V);\n vec3 Lp = normalize(vec3(L.x, max(L.y, 0.02) * 0.22, L.z));\n vec3 H2 = normalize(Lp + V);\n float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.8;\n float path = pow(max(dot(N, H2), 0.0), 70.0) * 1.5;\n col += uSunCol * (spec + path);\n float glint = pow(max(dot(reflect(-L, N), V), 0.0), 24.0);\n col += uSunCol * glint * 0.18;\n float sparkle = pow(max(dot(N, H), 0.0), 320.0) * 1.6;\n col += uSunCol * sparkle;\n float d = length(vWp.xz - uCenter);\n float foam = smoothstep(uRadius - 10.0, uRadius - 0.5, d);\n foam *= 0.55 + 0.45 * sin(d * 1.4 - uTime * 1.6 + sin(vWp.x * 0.3 + uTime));\n col = mix(col, vec3(0.93, 0.97, 1.0), clamp(foam, 0.0, 0.7) * 0.7);\n float fd = length(vV);\n float fogF = 1.0 - exp(-fogDensity * fogDensity * fd * fd);\n col = mix(col, fogColor, fogF);\n gl_FragColor = vec4(col, 0.955);\n}'
+    fragmentShader: 'uniform float uTime;\nuniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uSunDir; uniform vec3 uSunCol;\nuniform vec2 uCenter; uniform float uRadius; uniform float uFadeR; uniform float uShore0; uniform float uShore1;\nuniform sampler2D uBath; uniform vec2 uBathC; uniform float uBathR;\nuniform vec3 fogColor; uniform float fogDensity;\nuniform sampler2D uRefl; uniform float uReflOn;\nvarying vec3 vWp; varying vec3 vV; varying vec3 vN; varying vec4 vRefC;\nvoid main(){\n vec3 N = normalize(vN); vec3 V = normalize(vV);\n N.x += 0.085 * sin(vWp.x * 1.7 + uTime * 1.9) + 0.05 * sin(vWp.x * 3.2 - uTime * 1.2 + vWp.z * 1.3); N.z += 0.085 * cos(vWp.z * 1.9 + uTime * 1.7) + 0.05 * cos(vWp.z * 2.8 + uTime * 1.1 + vWp.x * 1.5); N = normalize(N); float fres = pow(1.0 - max(dot(N, V), 0.0), 2.1);\n float ripple = N.x * 0.5 + N.z * 0.45;\n vec3 col = mix(uDeep, uShallow, clamp(0.3 + ripple * 1.4, 0.0, 1.0));\n vec3 reflC = uSky;\n if (uReflOn > 0.5) {\n  vec2 ruv = vRefC.xy / max(vRefC.w, 0.001) + N.xz * 0.13;\n  reflC = texture2D(uRefl, clamp(ruv, 0.001, 0.999)).rgb;\n }\n col = mix(col, reflC, clamp(pow(fres, 1.5) * 0.95 + 0.05, 0.0, 0.95));\n vec3 L = normalize(uSunDir);\n vec3 H = normalize(L + V);\n vec3 Lp = normalize(vec3(L.x, max(L.y, 0.02) * 0.22, L.z));\n vec3 H2 = normalize(Lp + V);\n float spec = pow(max(dot(N, H), 0.0), 60.0) * 0.8;\n float path = pow(max(dot(N, H2), 0.0), 70.0) * 1.5;\n col += uSunCol * (spec + path);\n float glint = pow(max(dot(reflect(-L, N), V), 0.0), 24.0);\n col += uSunCol * glint * 0.18;\n float sparkle = pow(max(dot(N, H), 0.0), 320.0) * 1.6; col += uSunCol * pow(max(dot(N, H), 0.0), 24.0) * 0.12;\n col += uSunCol * sparkle;\n float d = length(vWp.xz - uCenter);\n vec2 bUV = (vWp.xz - uBathC) / (2.0 * uBathR) + 0.5;\n float th = texture2D(uBath, clamp(bUV, 0.002, 0.998)).r * 80.0 - 40.0;\n float subm = smoothstep(0.45, -0.35, th);\n float shore = smoothstep(-1.6, -0.35, th) * (1.0 - smoothstep(0.1, 0.9, th));\n float foam = shore * (0.55 + 0.45 * sin(d * 1.4 - uTime * 1.6 + sin(vWp.x * 0.3 + uTime)));\n col = mix(col, vec3(0.93, 0.97, 1.0), clamp(foam, 0.0, 0.7) * 0.7);\n float edgeA = subm * (1.0 - smoothstep(uFadeR, uRadius - 2.0, d));\n float fd = length(vV);\n float fogF = 1.0 - exp(-fogDensity * fogDensity * fd * fd);\n col = mix(col, fogColor, fogF);\n gl_FragColor = vec4(col, 0.972 * edgeA);\n}'
   });
   const rSz = IS_TOUCH ? 256 : 512;
   reflRT = new THREE.WebGLRenderTarget(rSz, rSz);
@@ -2874,7 +2904,7 @@ function buildLanterns() {
     gl.scale.set(3.6, 3.6, 1); gl.position.y = 3.8; g.add(gl);
     lanternGlowMats.push(gl.material);
     addShadowBlob(g, 0.8);
-    g.position.set(x, h, z);
+    g.position.set(x, Math.max(h, WATER_Y + 0.06), z);
     scene.add(g);
     lanternList.push({ x, z, lit: false, g });
   }
@@ -4654,7 +4684,6 @@ function updateHero(dt) {
   if (moving) {
     hero.x += wx * speed * dt;
     hero.z += wz * speed * dt;
-    hero.x = clamp(hero.x, -430, 430); hero.z = clamp(hero.z, -430, 430);
     const fixed = collideCircle(hero.x, hero.z, 0.9);
     hero.x = fixed.x; hero.z = fixed.z;
     hero.yaw = lerp(hero.yaw, Math.atan2(wx, wz), 1 - Math.exp(-10 * dt));
@@ -4677,7 +4706,7 @@ function updateHero(dt) {
   }
   // gravidade / chão / água
   const gh = height(hero.x, hero.z);
-  hero.swimming = gh < WATER_Y - 1.2 && hero.y < WATER_Y + 0.6 && distTo(hero.x, hero.z, LAKE.x, LAKE.z) < LAKE.r + 8;
+  hero.swimming = gh < WATER_Y - 1.2 && hero.y < WATER_Y + 0.6 && distTo(hero.x, hero.z, LAKE.x, LAKE.z) < LAKE.r + 130;
   if (hero.swimming && !hero.mounted) {
     hero.y = lerp(hero.y, WATER_Y - 0.25, dt * 5);
     hero.vy = 0;
