@@ -1,6 +1,6 @@
 /* Andora 3D — service worker: o jogo funciona offline no celular.
    HTML sempre pela rede (versão nova); o resto vem do cache. */
-const CACHE = 'andora3d-v2';
+const CACHE = 'andora3d-v3';
 self.addEventListener('install', () => { self.skipWaiting(); });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()

@@ -56,3 +56,9 @@ python3 ferramentas/montar_painel.py     # gera arte/painel-conceito.png
 ```
 
 **Celular/APK:** veja `webapp/README-DEPLOY.md` (GitHub Pages ou Render → "Adicionar à tela inicial"; depois PWABuilder para APK).
+
+
+## Assets 3D externos (CC0)
+- **KayKit - Character Pack: Adventurers** (Kay Lousberg) — personagens riggeados e animados (Mage/Rogue/Barbarian). Licença CC0. https://kaylousberg.itch.io/kaykit-adventurers
+- **Quaternius - Animated Animals** — animais riggeados e animados (deer/stag/fox/wolf/husky/shiba/alpaca/horse). Licença CC0. https://quaternius.itch.io/lowpoly-animated-animals
+- Ambos otimizados: animações podadas (17 clips/personagem) + malha quantizada (KHR_mesh_quantization).

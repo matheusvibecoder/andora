@@ -1729,6 +1729,112 @@ function furify(mat, amt) {
   };
   return mat;
 }
+const GLB_FILES = {
+  mage: 'assets/mage.glb', rogue: 'assets/rogue.glb', roguehooded: 'assets/roguehooded.glb', barb: 'assets/barbarian.glb',
+  deer: 'assets/deer.glb', stag: 'assets/stag.glb', fox: 'assets/fox.glb', wolf: 'assets/wolf.glb',
+  shiba: 'assets/shibainu.glb', husky: 'assets/husky.glb', alpaca: 'assets/alpaca.glb', horse: 'assets/horse.glb'
+};
+const GLB = { models: {}, pending: 0, swapped: false };
+function glbBuild(key, targetH, wantWalk) {
+  const src = GLB.models[key];
+  if (!src || !THREE.SkeletonUtils) return null;
+  const wrap = new THREE.Group();
+  const inner = THREE.SkeletonUtils.clone(src.scene);
+  const box = new THREE.Box3().setFromObject(inner);
+  const h = box.max.y - box.min.y;
+  const sc = h > 0.01 ? targetH / h : 1;
+  inner.scale.setScalar(sc);
+  inner.position.y = -box.min.y * sc;
+  inner.traverse(o => {
+    if (o.isMesh || o.isSkinnedMesh) {
+      o.castShadow = true; o.receiveShadow = true;
+      if (o.material && o.material.clone) o.material = o.material.clone();
+    }
+  });
+  wrap.add(inner);
+  const mixer = new THREE.AnimationMixer(inner);
+  const actions = {};
+  (src.animations || []).forEach(a => {
+    const short = a.name.split('|').pop();
+    actions[short] = mixer.clipAction(a);
+    actions[a.name] = actions[short];
+  });
+  const first = (wantWalk && (actions.Walk || actions.Gallop)) || actions.Idle || actions.Unarmed_Idle;
+  if (first) first.play();
+  return { g: wrap, mixer, actions, isGLTF: true, animWant: first === actions.Idle ? 'Idle' : 'Walk' };
+}
+function glbSwapRig(obj, gl, blobR) {
+  if (!obj || !obj.g || !gl) return false;
+  const old = obj.g;
+  gl.g.position.copy(old.position);
+  gl.g.rotation.copy(old.rotation);
+  scene.add(gl.g);
+  scene.remove(old);
+  addShadowBlob(gl.g, blobR);
+  if (obj.nametag) gl.g.add(obj.nametag);
+  obj.g = gl.g; obj.mixer = gl.mixer; obj.actions = gl.actions;
+  obj.isGLTF = true; obj.animWant = gl.animWant;
+  return true;
+}
+function swapPeopleToGLB() {
+  if (GLB.swapped) return;
+  GLB.swapped = true;
+  try {
+    if (typeof hero !== 'undefined' && hero && hero.g && !hero.mounted) {
+      const gl = glbBuild('mage', 1.78, false);
+      if (gl && glbSwapRig(hero, gl, 0.85)) applyHeroStyle();
+    }
+    const picks = ['rogue', 'roguehooded', 'barb', 'mage'];
+    let i = 0;
+    for (const n of (typeof npcList !== 'undefined' ? npcList : [])) {
+      const gl = glbBuild(picks[(i++) % picks.length], 1.72 + (i % 3) * 0.05, false);
+      glbSwapRig(n, gl, 0.8);
+    }
+    const A = { cervo: ['deer', 'stag'], cachorro: ['shiba', 'husky'], cabra: ['alpaca'] };
+    for (const an of (typeof animalList !== 'undefined' ? animalList : [])) {
+      const pk = A[an.kind];
+      if (!pk) continue;
+      const gl = glbBuild(pk[Math.floor(Math.random() * pk.length)], 1.15, true);
+      if (gl && glbSwapRig(an, gl, 0.7)) an.animWant = gl.animWant;
+    }
+  } catch (e) { }
+}
+function loadGLTFAssets() {
+  if (typeof window === 'undefined' || typeof XMLHttpRequest === 'undefined' || !window.THREE || !THREE.GLTFLoader) return;
+  const loader = new THREE.GLTFLoader();
+  const keys = Object.keys(GLB_FILES);
+  GLB.pending = keys.length;
+  keys.forEach(k => {
+    try {
+      loader.load(GLB_FILES[k], (g) => {
+        GLB.models[k] = g;
+        if (--GLB.pending <= 0) swapPeopleToGLB();
+      }, undefined, () => {
+        if (--GLB.pending <= 0) swapPeopleToGLB();
+      });
+    } catch (e) {
+      if (--GLB.pending <= 0) swapPeopleToGLB();
+    }
+  });
+}
+function poseG(rig, st, dt) {
+  dt = Math.min(dt || 0.016, 0.05);
+  if (rig.mixer) rig.mixer.update(dt);
+  let want = 'Idle';
+  if (st.mounted) want = 'Sit_Chair_Idle';
+  else if (st.air) want = 'Jump_Full_Short';
+  else if (st.swim) want = 'Walking_A';
+  else if (st.moving) want = st.run ? 'Running_A' : 'Walking_A';
+  else if (st.talk) want = 'Interact';
+  if (want !== rig.animWant) {
+    const a = rig.actions[want] || rig.actions.Idle || rig.actions.Unarmed_Idle;
+    const old = rig.actions[rig.animWant];
+    if (old && old !== a) old.fadeOut(0.22);
+    if (a) { a.reset().fadeIn(0.22).play(); }
+    rig.animWant = want;
+  }
+}
+loadGLTFAssets();
 const SKINS = ['#e8b88a', '#c98a5e', '#8a5a3c', '#f0c9a2'];
 const HUES = [0, 45, 120, 210, 300, 160];
 let heroName = 'Ari', heroHue = 120, heroSkin = 0;
@@ -2043,7 +2149,9 @@ function makeHumanoid(o) {
 }
 
 function poseHuman(rig, st, dt) {
-  if (!rig || !rig.hips) return;
+  if (!rig) return;
+  if (rig.isGLTF) return poseG(rig, st, dt);
+  if (!rig.hips) return;
   dt = Math.min(dt || 0.016, 0.05);
   rig.idleT = (rig.idleT || 0) + dt;
   const p = rig.animT || 0;
@@ -2153,6 +2261,17 @@ function makeHero() {
 }
 function applyHeroStyle() {
   if (!hero) return;
+  if (hero.isGLTF) {
+    const h = heroHue / 360;
+    const tint = new THREE.Color().setHSL(h, 0.42, 0.52);
+    hero.g.traverse(o => {
+      if ((o.isMesh || o.isSkinnedMesh) && o.material && o.material.color && !o.userData.noTint) {
+        if (!o.userData.baseCol) o.userData.baseCol = o.material.color.clone();
+        o.material.color.copy(o.userData.baseCol).lerp(tint, 0.3);
+      }
+    });
+    return;
+  }
   const h = heroHue / 360;
   hero.cloakM.color.setHSL(h, 0.52, 0.4);
   hero.tunicM.color.setHSL(h, 0.22, 0.78);
@@ -2329,10 +2448,11 @@ function buildNPCs() {
     const tex = new THREE.CanvasTexture(cv);
     const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
     spr.scale.set(3.4, 1.05, 1); spr.position.y = 3.55; spr.renderOrder = 5; g.add(spr);
+    const nametagRef = spr;
     const h = height(n.x, n.z);
     g.position.set(n.x, h, n.z);
     scene.add(g);
-    npcList.push(Object.assign({}, n, rig, { homeX: n.x, homeZ: n.z, animT: rand(0, 6), wanderT: rand(2, 8), lastTalk: 0, x: n.x, z: n.z }));
+    npcList.push(Object.assign({}, n, rig, { nametag: nametagRef, homeX: n.x, homeZ: n.z, animT: rand(0, 6), wanderT: rand(2, 8), lastTalk: 0, x: n.x, z: n.z }));
   }
   // moradores ambientes (sem diálogo) — trajes variados da vila
   for (let i = 0; i < 8; i++) {
@@ -2507,6 +2627,7 @@ function buildAnimals() {
 }
 function animalThink(an, dt) {
   an.t += dt; an.wanderT -= dt;
+  if (an.isGLTF && an.mixer) an.mixer.update(dt);
   if (an.onWater) {
     if (an.wanderT <= 0) { an.wanderT = rand(4, 10); an.yaw = rand(0, 6.28); }
     const r = distTo(an.x, an.z, LAKE.x, LAKE.z);
