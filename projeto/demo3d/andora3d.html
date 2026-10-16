@@ -2889,8 +2889,20 @@ function buildLanterns() {
     [120, 60], [180, 0], [-80, 40], [-140, -40], [-176, -96], [-120, -110],
     [30, -160], [40, -240], [210, 210], [150, 190], [-60, 250], [60, 210]
   ];
-  for (const [x, z] of spots) {
-    const h = height(x, z);
+  for (const [sx, sz] of spots) {
+    let x = sx, z = sz;
+    let h = height(x, z);
+    if (h < WATER_Y + 1.5 && distTo(x, z, LAKE.x, LAKE.z) < LAKE.r + 140) {
+      let best = null;
+      for (let r = 5; r <= 250 && !best; r += 5) {
+        for (let a = 0; a < 360; a += 12) {
+          const nx = x + Math.cos(a * Math.PI / 180) * r, nz = z + Math.sin(a * Math.PI / 180) * r;
+          const nh = height(nx, nz);
+          if (nh >= WATER_Y + 1.5) { best = [nx, nz, nh]; break; }
+        }
+      }
+      if (best) { x = best[0]; z = best[1]; h = best[2]; }
+    }
     const g = new THREE.Group();
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 3.6, 6), new THREE.MeshStandardMaterial({ color: 0x4a3624 }));
     post.position.y = 1.8; g.add(post);
@@ -2904,7 +2916,7 @@ function buildLanterns() {
     gl.scale.set(3.6, 3.6, 1); gl.position.y = 3.8; g.add(gl);
     lanternGlowMats.push(gl.material);
     addShadowBlob(g, 0.8);
-    g.position.set(x, Math.max(h, WATER_Y + 0.06), z);
+    g.position.set(x, h, z);
     scene.add(g);
     lanternList.push({ x, z, lit: false, g });
   }
